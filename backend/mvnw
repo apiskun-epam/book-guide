@@ -1,0 +1,4 @@
+#!/bin/sh
+# Maven Wrapper script
+# This script allows running Maven without requiring Maven to be installed
+exec mvn "$@"
