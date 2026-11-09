@@ -1,11 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Typography */
+  --font-display: 'Playfair Display', 'Spectral', Georgia, serif;
+  --font-body: 'IBM Plex Sans', 'DM Sans', Verdana, sans-serif;
+
+  /* Colors - Accent */
+  --color-primary: #f5b544;
+  --color-primary-light: #f8c970;
+  --color-accent: #5b9cf5;
+  --color-accent-light: #7db2f8;
+  --color-danger: #f0716b;
+
+  /* Colors - Surfaces (dark navy) */
+  --color-sidebar: #10141a;
+  --color-bg: #151a21;
+  --color-bg-elevated: #1a2029;
+  --color-bg-interactive: #1f2630;
+  --color-bg-active: #232b36;
+  --color-text-primary: #e8eaee;
+  --color-text-secondary: #959cab;
+  --color-text-tertiary: #5f6674;
+  --color-border: #232a34;
+  --color-border-strong: #313a47;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-full: 999px;
+
+  /* Spacing (8px rhythm) */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-6: 48px;
+  --space-12: 96px;
+
+  /* Type */
+  --text-base: 1rem;
+
+  font-family: var(--font-body);
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,10 +52,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
 }
@@ -24,11 +65,48 @@ body {
 #root {
   width: 100%;
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
 }
 
 .app {
-  max-width: 1280px;
-  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-main {
+  min-width: 0;
+  overflow-y: auto;
+  background-color: var(--color-bg);
+}
+
+@media (max-width: 768px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+}
+
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: var(--radius-full);
+  border: 3px solid var(--color-bg);
+}
+
+/* Reset button styles */
+button {
+  font-family: var(--font-body);
+  border: none;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+}
+
+/* Reset input styles */
+input {
+  font-family: var(--font-body);
+  border: none;
+  outline: none;
 }

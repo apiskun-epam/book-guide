@@ -10,7 +10,7 @@ Scope: this is a **local proof of concept**. Do not add cloud hosting, deploymen
 
 ## Tech stack
 
-- **Backend:** Java 21, Spring Boot 3, Spring Data JPA, SQLite, Flyway migrations, JUnit 5, Mockito, Firebase Admin SDK
+- **Backend:** Java 21, Spring Boot 3, Lombok, Spring Data JPA, SQLite, Flyway migrations, JUnit 5, Mockito, Firebase Admin SDK
 - **Frontend:** React 18, TypeScript (strict mode), Vite, Vitest, React Testing Library
 - **Auth:** Firebase Auth with Google sign-in only. No other providers.
 - **AI:** Claude API called server-side only, via the Anthropic Messages API
@@ -44,7 +44,7 @@ cd backend
 # Frontend
 cd frontend
 npm install
-npm run dev                     # start SPA on http://localhost:5173
+npm run dev                     # start SPA on http://localhost:3000
 npm test                        # Vitest
 npm run typecheck               # tsc --noEmit
 npm run lint
@@ -77,6 +77,11 @@ Before reporting a task as done, run the tests and type check for the part you c
 - Validate all request input with Bean Validation annotations.
 - Schema changes go through a new Flyway migration. Never edit an applied migration.
 - Use constructor injection. Avoid field injection.
+- **Lombok is used for all Java code** (version managed by Spring Boot, `optional` dependency, excluded from the packaged jar). Do not hand-write boilerplate:
+  - Injected beans (controllers, services, components): `@RequiredArgsConstructor` with `private final` fields.
+  - Request/response DTOs: `@Data`, plus `@NoArgsConstructor` / `@AllArgsConstructor` when needed.
+  - JPA entities: `@Getter`, `@Setter`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@Builder`. Never `@Data` or `@EqualsAndHashCode` on entities (it breaks equality and lazy loading); create instances with the builder.
+  - Never put `@ToString` on a type holding secrets or encrypted fields. Use `@ToString.Exclude` or omit it.
 - Name tests `<ClassName>Test` for unit tests and `<ClassName>IT` for integration tests.
 
 ### Frontend
@@ -84,11 +89,13 @@ Before reporting a task as done, run the tests and type check for the part you c
 - Components are function components with typed props.
 - Feature code lives in `src/features/<feature>`. Shared UI goes in `src/components`.
 - Auth-related code stays in `src/auth`. Read the token only through `getApiToken()`.
+- **Icons live in the icon library, `src/components/icons`.** Never define an icon or inline an `<svg>` inside a component. Add a new icon as its own file there (built on the shared `Icon` wrapper), export it from `icons/index.ts`, and import it with `import { LibraryIcon } from './icons'`.
 - Show loading, empty, and error states for every data view.
 
 ## Testing expectations
 
 - Every service method with branching logic needs a JUnit test.
+- Backend unit tests use JUnit 5 with Mockito (`@ExtendWith(MockitoExtension.class)`, `@Mock`, `@InjectMocks`). Mock collaborators (repositories, HTTP clients, the Claude client) instead of hand-written fakes or real network/DB access. Services must receive collaborators through constructor injection so they can be mocked. Use real objects only for pure logic and simple value types.
 - The exclusion guard must have tests covering: exact match, case difference, ISBN match, and no match.
 - Every user-data endpoint needs a test showing that user A cannot read or modify user B's data.
 - Agent tests use a mocked Claude client. Tests must never call the real API.
