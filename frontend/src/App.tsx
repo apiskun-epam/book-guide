@@ -2,9 +2,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Navigation from './components/Navigation';
 import CollectionPage from './pages/CollectionPage';
 import ChatPage from './features/chat/ChatPage';
+import { ToastProvider } from './components/ToastProvider';
 
 function App() {
   return (
+    <ToastProvider>
     <Router>
       <div className="app">
         <Navigation />
@@ -17,6 +19,7 @@ function App() {
         </main>
       </div>
     </Router>
+    </ToastProvider>
   );
 }
 

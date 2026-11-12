@@ -3,8 +3,7 @@ import { streamBookSuggestions, BookCandidate, addBookToCollection } from '../..
 import { ChatMessage } from './ChatMessage';
 import { BookSuggestionCard } from './BookSuggestionCard';
 import { SendIcon } from '../../components/icons';
-import { Toast } from '../../components/Toast';
-import { useToast } from '../../components/useToast';
+import { useToast } from '../../components/ToastProvider';
 import './ChatPage.css';
 
 interface Message {
@@ -20,7 +19,7 @@ const ChatPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookStatus, setBookStatus] = useState<Record<string, 'added'>>({});
-  const { toast, showToast } = useToast(3000);
+  const { showToast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -89,7 +88,7 @@ const ChatPage: React.FC = () => {
       setBookStatus((prev) => ({ ...prev, [key]: 'added' }));
       showToast(`"${book.title}" added to your collection!`);
     } catch (err) {
-      showToast('Failed to add book. It may already be in your collection.', 'error');
+      showToast('Failed to add book. It may already be in your collection.', { variant: 'error' });
       console.error('Error adding book:', err);
     }
   };
@@ -197,7 +196,6 @@ const ChatPage: React.FC = () => {
           </form>
         </div>
       </div>
-      {toast && <Toast message={toast.message} variant={toast.variant} />}
     </div>
   );
 };

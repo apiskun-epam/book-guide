@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SearchBar, { DEBOUNCE_MS } from './SearchBar';
+import { ToastProvider } from './ToastProvider';
 import * as client from '../api/client';
 
 vi.mock('../api/client');
@@ -31,7 +32,7 @@ describe('SearchBar typeahead', () => {
   });
 
   it('does not search below 3 characters', async () => {
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('du');
     await advance(DEBOUNCE_MS * 2);
     expect(search).not.toHaveBeenCalled();
@@ -39,7 +40,7 @@ describe('SearchBar typeahead', () => {
 
   it('searches once after the debounce when 3 characters are typed', async () => {
     search.mockResolvedValue([book('Dune')]);
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('dun');
     type('dune');
     await advance(DEBOUNCE_MS - 1);
@@ -52,7 +53,7 @@ describe('SearchBar typeahead', () => {
 
   it('closes results when the query drops below 3 characters', async () => {
     search.mockResolvedValue([book('Dune')]);
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('dune');
     await advance(DEBOUNCE_MS);
     expect(screen.getByText('Dune')).toBeInTheDocument();
@@ -65,7 +66,7 @@ describe('SearchBar typeahead', () => {
     search
       .mockImplementationOnce(() => new Promise((r) => { resolveOld = r; }))
       .mockResolvedValueOnce([book('New Result')]);
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('old');
     await advance(DEBOUNCE_MS);
     type('new');
@@ -77,7 +78,7 @@ describe('SearchBar typeahead', () => {
 
   it('shows an empty state', async () => {
     search.mockResolvedValue([]);
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('zzz');
     await advance(DEBOUNCE_MS);
     expect(screen.getByText('No books found.')).toBeInTheDocument();
@@ -86,7 +87,7 @@ describe('SearchBar typeahead', () => {
   it('shows an error state', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     search.mockRejectedValue(new Error('boom'));
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('dune');
     await advance(DEBOUNCE_MS);
     expect(screen.getByText('Search failed. Please try again.')).toBeInTheDocument();
@@ -94,7 +95,7 @@ describe('SearchBar typeahead', () => {
 
   it('submitting searches immediately, even under 3 characters', async () => {
     search.mockResolvedValue([book('Up')]);
-    render(<SearchBar onBookAdded={() => {}} />);
+    render(<SearchBar onBookAdded={() => {}} />, { wrapper: ToastProvider });
     type('up');
     fireEvent.submit(screen.getByRole('search'));
     await advance(0);

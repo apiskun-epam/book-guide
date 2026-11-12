@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { searchBooks, addBookToCollection, BookSearchResult } from '../api/client';
 import BookDetailModal from './BookDetailModal';
+import { useToast } from './ToastProvider';
 import './SearchBar.css';
 
 export const MIN_QUERY_LENGTH = 3;
@@ -9,6 +10,7 @@ export const DEBOUNCE_MS = 300;
 type SearchStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const SearchBar: React.FC<{ onBookAdded: () => void }> = ({ onBookAdded }) => {
+  const { showToast } = useToast();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<BookSearchResult[]>([]);
   const [status, setStatus] = useState<SearchStatus>('idle');
@@ -94,9 +96,10 @@ const SearchBar: React.FC<{ onBookAdded: () => void }> = ({ onBookAdded }) => {
       setSelectedBook(null);
       setQuery('');
       onBookAdded();
+      showToast(`"${book.title}" added to your collection!`);
     } catch (error) {
       console.error('Failed to add book:', error);
-      alert('Failed to add book to collection');
+      showToast('Failed to add book to collection', { variant: 'error' });
     }
   };
 

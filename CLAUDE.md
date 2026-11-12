@@ -82,6 +82,7 @@ Before reporting a task as done, run the tests and type check for the part you c
   - Request/response DTOs: `@Data`, plus `@NoArgsConstructor` / `@AllArgsConstructor` when needed.
   - JPA entities: `@Getter`, `@Setter`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@Builder`. Never `@Data` or `@EqualsAndHashCode` on entities (it breaks equality and lazy loading); create instances with the builder.
   - Never put `@ToString` on a type holding secrets or encrypted fields. Use `@ToString.Exclude` or omit it.
+- **Deletes are soft with a 5-second undo window.** Removing a book sets `deletion_scheduled_at`; the book is hidden immediately and a scheduled purge deletes it for good, so the removal completes even if the user refreshes. Undo is `POST /api/collection/{id}/undo-removal`. Active-collection queries must exclude books pending deletion.
 - Name tests `<ClassName>Test` for unit tests and `<ClassName>IT` for integration tests.
 
 ### Frontend
@@ -91,6 +92,7 @@ Before reporting a task as done, run the tests and type check for the part you c
 - Auth-related code stays in `src/auth`. Read the token only through `getApiToken()`.
 - **Icons live in the icon library, `src/components/icons`.** Never define an icon or inline an `<svg>` inside a component. Add a new icon as its own file there (built on the shared `Icon` wrapper), export it from `icons/index.ts`, and import it with `import { LibraryIcon } from './icons'`.
 - Show loading, empty, and error states for every data view.
+- **Notifications are toasts, always.** Never use `alert()`, `confirm()`, or `prompt()`. Show every success, error, and undo message through `useToast()` from `src/components/ToastProvider`, which stacks styled toasts in the bottom-left corner. Do not render `Toast` directly or create page-specific notification styles; all notifications share the look in `Toast.css`. Destructive actions are not confirmed with a dialog: perform them, then offer an Undo action on the toast.
 
 ## Testing expectations
 

@@ -53,6 +53,10 @@ public class Book {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    /** When set, the book is hidden and will be permanently deleted at this time unless restored. */
+    @Column(name = "deletion_scheduled_at")
+    private LocalDateTime deletionScheduledAt;
+
     @PrePersist
     protected void onCreate() {
         addedAt = LocalDateTime.now();

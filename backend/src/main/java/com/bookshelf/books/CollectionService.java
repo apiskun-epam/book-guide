@@ -4,6 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -11,7 +14,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CollectionService {
 
+    /** How long a removal can be undone before the book is permanently deleted. */
+    public static final Duration UNDO_WINDOW = Duration.ofSeconds(5);
+
     private final BookRepository bookRepository;
+    private final Clock clock;
 
     public List<BookDTO> getUserCollection(String userId) {
         return bookRepository.findByUserId(userId)
@@ -54,11 +61,30 @@ public class CollectionService {
         return new BookDTO(updatedBook);
     }
 
+    /** Hides the book and schedules its permanent deletion after {@link #UNDO_WINDOW}. */
     @Transactional
     public void removeBookFromCollection(String userId, Integer bookId) {
         Book book = bookRepository.findByIdAndUserId(bookId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Book not found"));
 
-        bookRepository.delete(book);
+        book.setDeletionScheduledAt(LocalDateTime.now(clock).plus(UNDO_WINDOW));
+        bookRepository.save(book);
+    }
+
+    /** Cancels a scheduled removal. Fails if the book is not pending deletion (e.g. already purged). */
+    @Transactional
+    public BookDTO undoRemoval(String userId, Integer bookId) {
+        Book book = bookRepository.findPendingDeletion(bookId, userId)
+                .filter(b -> b.getDeletionScheduledAt().isAfter(LocalDateTime.now(clock)))
+                .orElseThrow(() -> new IllegalArgumentException("Book not found"));
+
+        book.setDeletionScheduledAt(null);
+        return new BookDTO(bookRepository.save(book));
+    }
+
+    /** Permanently deletes every book whose undo window has passed. */
+    @Transactional
+    public int purgeExpiredRemovals() {
+        return bookRepository.deleteExpired(LocalDateTime.now(clock));
     }
 }

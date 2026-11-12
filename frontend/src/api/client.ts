@@ -81,6 +81,16 @@ export const removeBookFromCollection = async (bookId: number): Promise<void> =>
   }
 };
 
+export const undoBookRemoval = async (bookId: number): Promise<Book> => {
+  const response = await fetch(`${API_BASE_URL}/collection/${bookId}/undo-removal`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to undo removal');
+  }
+  return response.json();
+};
+
 export interface BookCandidate {
   title: string;
   author: string;
