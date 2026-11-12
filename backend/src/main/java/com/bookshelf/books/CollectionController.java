@@ -47,4 +47,11 @@ public class CollectionController {
         collectionService.removeBookFromCollection(userId, bookId);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{bookId}/undo-removal")
+    public ResponseEntity<BookDTO> undoRemoval(@PathVariable Integer bookId) {
+        // TODO: Replace with authenticated user ID from Firebase token
+        String userId = "demo-user";
+        return ResponseEntity.ok(collectionService.undoRemoval(userId, bookId));
+    }
 }

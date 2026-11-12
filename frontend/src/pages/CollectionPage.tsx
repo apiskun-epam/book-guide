@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { getCollection, updateBookRating, removeBookFromCollection, Book } from '../api/client';
+import { getCollection, updateBookRating, removeBookFromCollection, undoBookRemoval, Book } from '../api/client';
 import SearchBar from '../components/SearchBar';
 import BookDetailSidebar from '../components/BookDetailSidebar';
+import { useToast } from '../components/ToastProvider';
 import './CollectionPage.css';
 
+/** Matches the backend's undo window (CollectionService.UNDO_WINDOW). */
+const UNDO_WINDOW_MS = 5000;
+
 const CollectionPage: React.FC = () => {
+  const { showToast } = useToast();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,20 +44,36 @@ const CollectionPage: React.FC = () => {
       );
     } catch (err) {
       console.error('Failed to update rating:', err);
-      alert('Failed to update rating');
+      showToast('Failed to update rating', { variant: 'error' });
     }
   };
 
-  const handleRemoveBook = async (bookId: number) => {
-    if (!confirm('Are you sure you want to remove this book?')) return;
-
+  // The backend hides the book immediately and deletes it for good after the undo window,
+  // so the removal completes even if the page is refreshed in the meantime.
+  const handleRemoveBook = async (book: Book) => {
     try {
-      await removeBookFromCollection(bookId);
-      setBooks((prevBooks) => prevBooks.filter((book) => book.id !== bookId));
-      setSelectedId((current) => (current === bookId ? null : current));
+      await removeBookFromCollection(book.id);
     } catch (err) {
       console.error('Failed to remove book:', err);
-      alert('Failed to remove book');
+      showToast('Failed to remove book', { variant: 'error' });
+      return;
+    }
+    setBooks((prevBooks) => prevBooks.filter((b) => b.id !== book.id));
+    setSelectedId((current) => (current === book.id ? null : current));
+    showToast(`"${book.title}" removed from your collection`, {
+      durationMs: UNDO_WINDOW_MS,
+      action: { label: 'Undo', onClick: () => handleUndoRemove(book) },
+    });
+  };
+
+  const handleUndoRemove = async (book: Book) => {
+    try {
+      await undoBookRemoval(book.id);
+      await fetchCollection();
+      showToast(`"${book.title}" restored`);
+    } catch (err) {
+      console.error('Failed to undo removal:', err);
+      showToast('Could not undo removal', { variant: 'error' });
     }
   };
 
@@ -134,7 +155,7 @@ const CollectionPage: React.FC = () => {
               <div className="book-actions" onClick={(e) => e.stopPropagation()}>
                 <button
                   className="remove-button"
-                  onClick={() => handleRemoveBook(book.id)}
+                  onClick={() => handleRemoveBook(book)}
                 >
                   Remove
                 </button>
