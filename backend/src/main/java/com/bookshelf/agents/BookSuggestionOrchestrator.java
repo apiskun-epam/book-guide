@@ -2,6 +2,7 @@ package com.bookshelf.agents;
 
 import com.bookshelf.books.Book;
 import com.bookshelf.books.BookRepository;
+import com.bookshelf.books.BookSearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ public class BookSuggestionOrchestrator {
     private final PreferenceAgent preferenceAgent;
     private final CandidateAgent candidateAgent;
     private final BookRepository bookRepository;
+    private final BookSearchService bookSearchService;
 
     /**
      * Orchestrates the multi-agent workflow to generate book suggestions.
@@ -50,6 +52,8 @@ public class BookSuggestionOrchestrator {
             CandidateResult candidateResult = candidateAgent.generateCandidates(intakeResult, preferenceResult);
             log.debug("Generated {} candidates", candidateResult.getCandidates().size());
             
+            candidateResult.getCandidates().forEach(this::attachCover);
+
             // Build response
             String message = buildResponseMessage(intakeResult, userBooks.size());
             SuggestionResponse response = new SuggestionResponse(
@@ -83,11 +87,19 @@ public class BookSuggestionOrchestrator {
 
             listener.onMessage(buildResponseMessage(intakeResult, userBooks.size()));
 
-            candidateAgent.streamCandidates(intakeResult, preferenceResult, listener::onSuggestion);
+            candidateAgent.streamCandidates(intakeResult, preferenceResult, candidate -> {
+                attachCover(candidate);
+                listener.onSuggestion(candidate);
+            });
         } catch (Exception e) {
             log.error("Error streaming book suggestions for user: {}", userId, e);
             throw new RuntimeException("Failed to generate book suggestions. Please try again.", e);
         }
+    }
+
+    private void attachCover(BookCandidate candidate) {
+        candidate.setCoverUrl(bookSearchService.findCoverUrl(
+                candidate.getTitle(), candidate.getAuthor(), candidate.getIsbn()));
     }
 
     private String buildResponseMessage(IntakeResult intake, int collectionSize) {

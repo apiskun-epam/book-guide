@@ -83,6 +83,7 @@ const ChatPage: React.FC = () => {
         title: book.title,
         author: book.author,
         isbn: book.isbn || undefined,
+        coverUrl: book.coverUrl || undefined,
         description: book.description,
       });
       setBookStatus((prev) => ({ ...prev, [key]: 'added' }));

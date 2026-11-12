@@ -95,4 +95,48 @@ public class BookSearchService {
             throw new RuntimeException("Failed to search books", e);
         }
     }
+
+    /**
+     * Best-effort cover lookup for a known book. Prefers an ISBN match, falls back to title and author.
+     * Returns null when no cover is found or the lookup fails; never throws.
+     */
+    public String findCoverUrl(String title, String author, String isbn) {
+        try {
+            String query;
+            if (isbn != null && !isbn.isBlank()) {
+                query = "isbn:" + isbn.trim();
+            } else if (title != null && !title.isBlank()) {
+                query = "title:\"" + title.replace("\"", "") + "\""
+                        + (author != null && !author.isBlank() ? " author:\"" + author.replace("\"", "") + "\"" : "");
+            } else {
+                return null;
+            }
+            String coverId = fetchFirstCoverId(query);
+            if (coverId == null && isbn != null && !isbn.isBlank() && title != null && !title.isBlank()) {
+                coverId = fetchFirstCoverId("title:\"" + title.replace("\"", "") + "\""
+                        + (author != null && !author.isBlank() ? " author:\"" + author.replace("\"", "") + "\"" : ""));
+            }
+            return coverId == null ? null : "https://covers.openlibrary.org/b/id/" + coverId + "-M.jpg";
+        } catch (Exception e) {
+            log.warn("Cover lookup failed for '{}'", title, e);
+            return null;
+        }
+    }
+
+    private String fetchFirstCoverId(String query) throws Exception {
+        String response = restTemplate.getForObject(
+                OPEN_LIBRARY_SEARCH_URL + "?q={q}&limit=5&fields=cover_i", String.class, query);
+        if (response == null) {
+            return null;
+        }
+        JsonNode docs = objectMapper.readTree(response).get("docs");
+        if (docs != null && docs.isArray()) {
+            for (JsonNode doc : docs) {
+                if (doc.hasNonNull(FIELD_COVER_I)) {
+                    return doc.get(FIELD_COVER_I).asText();
+                }
+            }
+        }
+        return null;
+    }
 }

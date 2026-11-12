@@ -148,4 +148,23 @@ class BookSearchServiceTest {
 
         assertThrows(RuntimeException.class, () -> service.searchBooks("x"));
     }
+
+    @Test
+    void findCoverUrlBuildsUrlFromFirstDocWithCover() {
+        when(restTemplate.getForObject(anyString(), eq(String.class), eq("isbn:123")))
+                .thenReturn("{\"docs\":[{\"title\":\"x\"},{\"cover_i\":77}]}");
+
+        assertEquals("https://covers.openlibrary.org/b/id/77-M.jpg", service.findCoverUrl("T", "A", "123"));
+    }
+
+    @Test
+    void findCoverUrlReturnsNullWhenNoCoverOrFailure() {
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class)))
+                .thenReturn("{\"docs\":[]}")
+                .thenThrow(new RestClientException("boom"));
+
+        assertNull(service.findCoverUrl("T", "A", null));
+        assertNull(service.findCoverUrl("T", "A", null));
+        assertNull(service.findCoverUrl(null, null, null));
+    }
 }

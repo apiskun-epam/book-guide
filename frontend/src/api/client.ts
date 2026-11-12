@@ -88,6 +88,7 @@ export interface BookCandidate {
   genre: string;
   description: string;
   whySuggested: string;
+  coverUrl?: string | null;
 }
 
 export interface SuggestionResponse {
