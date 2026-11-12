@@ -1,0 +1,197 @@
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--color-bg);
+}
+
+.chat-page__container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.chat-page__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3) 0;
+}
+
+.chat-page__welcome {
+  max-width: 48rem;
+  margin: var(--space-12) auto;
+  padding: 0 var(--space-2);
+  text-align: center;
+}
+
+.chat-page__welcome-title {
+  margin: 0 0 var(--space-2) 0;
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+}
+
+.chat-page__welcome-text {
+  margin: 0 0 var(--space-4) 0;
+  font-size: 1.125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.chat-page__examples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.chat-page__examples-title {
+  margin: 0 0 var(--space-1) 0;
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.chat-page__example-btn {
+  padding: 12px var(--space-2);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  transition: all 150ms ease-out;
+  text-align: left;
+  max-width: 32rem;
+  width: 100%;
+}
+
+.chat-page__example-btn:hover {
+  background-color: var(--color-bg-interactive);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+
+.chat-page__suggestions {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.chat-page__loading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chat-page__loading-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-text-tertiary);
+  border-radius: 50%;
+  animation: loading-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-page__loading-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.chat-page__loading-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes loading-pulse {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.chat-page__error {
+  max-width: 48rem;
+  margin: var(--space-2) auto;
+  padding: var(--space-2);
+  background-color: rgba(240, 113, 107, 0.1);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+  text-align: center;
+}
+
+.chat-page__input-container {
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-bg);
+}
+
+.chat-page__input-form {
+  display: flex;
+  gap: var(--space-1);
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.chat-page__input {
+  flex: 1;
+  padding: 12px var(--space-2);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: none;
+  min-height: 48px;
+  max-height: 200px;
+  transition: border-color 150ms ease-out;
+}
+
+.chat-page__input:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+}
+
+.chat-page__input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.chat-page__input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-page__send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background-color: var(--color-primary);
+  color: var(--color-bg);
+  border-radius: var(--radius-md);
+  transition: all 150ms ease-out;
+  flex-shrink: 0;
+}
+
+.chat-page__send-btn:hover:not(:disabled) {
+  background-color: var(--color-primary-light);
+  transform: translateY(-1px);
+}
+
+.chat-page__send-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.chat-page__send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
