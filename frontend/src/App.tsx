@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import CollectionPage from './pages/CollectionPage';
-import DiscoverPage from './pages/DiscoverPage';
+import ChatPage from './features/chat/ChatPage';
 
 function App() {
   return (
@@ -12,7 +12,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/collection" replace />} />
             <Route path="/collection" element={<CollectionPage />} />
-            <Route path="/discover" element={<DiscoverPage />} />
+            <Route path="/discover" element={<ChatPage />} />
           </Routes>
         </main>
       </div>

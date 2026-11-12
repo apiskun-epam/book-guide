@@ -80,3 +80,86 @@ export const removeBookFromCollection = async (bookId: number): Promise<void> =>
     throw new Error('Failed to remove book');
   }
 };
+
+export interface BookCandidate {
+  title: string;
+  author: string;
+  isbn: string | null;
+  genre: string;
+  description: string;
+  whySuggested: string;
+}
+
+export interface SuggestionResponse {
+  suggestions: BookCandidate[];
+  message: string;
+}
+
+export const getBookSuggestions = async (prompt: string): Promise<SuggestionResponse> => {
+  const response = await fetch(`${API_BASE_URL}/suggestions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to get book suggestions');
+  }
+  return response.json();
+};
+
+export interface SuggestionStreamHandlers {
+  onMessage: (message: string) => void;
+  onSuggestion: (book: BookCandidate) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Streams suggestions over Server-Sent Events (POST, so fetch is used instead of EventSource).
+ * Resolves when the server sends "done"; rejects on an "error" event or network failure.
+ */
+export const streamBookSuggestions = async (
+  prompt: string,
+  { onMessage, onSuggestion, signal }: SuggestionStreamHandlers,
+): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/suggestions/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ prompt }),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    throw new Error('Failed to get book suggestions');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const handleEvent = (raw: string): boolean => {
+    let event = 'message';
+    const dataLines: string[] = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+    }
+    const data = dataLines.join('\n');
+    if (event === 'message') onMessage(data);
+    else if (event === 'suggestion') onSuggestion(JSON.parse(data) as BookCandidate);
+    else if (event === 'error') throw new Error(data || 'Failed to get book suggestions');
+    return event === 'done';
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    let sep: number;
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      if (raw.trim() && handleEvent(raw)) return;
+    }
+  }
+};
