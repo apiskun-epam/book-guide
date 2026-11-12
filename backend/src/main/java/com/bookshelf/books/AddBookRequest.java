@@ -24,4 +24,6 @@ public class AddBookRequest {
     @Min(value = 0, message = "Rating must be between 0 and 5")
     @Max(value = 5, message = "Rating must be between 0 and 5")
     private Integer rating;
+
+    private String test;
 }
