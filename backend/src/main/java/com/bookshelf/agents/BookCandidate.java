@@ -14,4 +14,5 @@ public class BookCandidate {
     private String genre;
     private String description;
     private String whySuggested;
+    private String coverUrl;
 }
