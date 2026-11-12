@@ -71,12 +71,21 @@ public class CollectionService {
         bookRepository.save(book);
     }
 
-    /** Cancels a scheduled removal. Fails if the book is not pending deletion (e.g. already purged). */
+    /**
+     * Cancels a scheduled removal. Fails if the book is not pending deletion (e.g. already purged)
+     * or if an active book with the same ISBN has since been added.
+     */
     @Transactional
     public BookDTO undoRemoval(String userId, Integer bookId) {
         Book book = bookRepository.findPendingDeletion(bookId, userId)
                 .filter(b -> b.getDeletionScheduledAt().isAfter(LocalDateTime.now(clock)))
                 .orElseThrow(() -> new IllegalArgumentException("Book not found"));
+
+        // The book may have been re-added while its removal was pending; don't create a duplicate.
+        if (book.getIsbn() != null && !book.getIsbn().isEmpty()
+                && bookRepository.existsByUserIdAndIsbn(userId, book.getIsbn())) {
+            throw new IllegalArgumentException("Book already exists in your collection");
+        }
 
         book.setDeletionScheduledAt(null);
         return new BookDTO(bookRepository.save(book));

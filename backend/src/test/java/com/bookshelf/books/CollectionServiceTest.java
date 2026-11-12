@@ -223,6 +223,7 @@ class CollectionServiceTest {
         Book pending = book(3, USER_A, "Dune", "111");
         pending.setDeletionScheduledAt(NOW.plusSeconds(2));
         when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(false);
         when(bookRepository.save(pending)).thenReturn(pending);
 
         BookDTO dto = service.undoRemoval(USER_A, 3);
@@ -243,6 +244,36 @@ class CollectionServiceTest {
 
         assertNotNull(pending.getDeletionScheduledAt());
         verify(bookRepository, never()).save(any());
+    }
+
+    @Test
+    void undoRemovalFailsWhenSameIsbnWasReAddedDuringWindow() {
+        fixClockAtNow();
+        Book pending = book(3, USER_A, "Dune", "111");
+        pending.setDeletionScheduledAt(NOW.plusSeconds(2));
+        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(true);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.undoRemoval(USER_A, 3));
+
+        assertEquals("Book already exists in your collection", ex.getMessage());
+        assertNotNull(pending.getDeletionScheduledAt());
+        verify(bookRepository, never()).save(any());
+    }
+
+    @Test
+    void undoRemovalSkipsDuplicateCheckWhenIsbnMissing() {
+        fixClockAtNow();
+        Book pending = book(3, USER_A, "No ISBN", null);
+        pending.setDeletionScheduledAt(NOW.plusSeconds(2));
+        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.save(pending)).thenReturn(pending);
+
+        service.undoRemoval(USER_A, 3);
+
+        assertNull(pending.getDeletionScheduledAt());
+        verify(bookRepository, never()).existsByUserIdAndIsbn(any(), any());
     }
 
     @Test
