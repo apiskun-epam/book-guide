@@ -3,6 +3,9 @@ spring:
     name: bookshelf-backend
   profiles:
     active: local
+  autoconfigure:
+    # We authenticate with session cookies only; no generated default user/password
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     url: jdbc:sqlite:data/bookshelf.db
     driver-class-name: org.sqlite.JDBC
@@ -29,6 +32,16 @@ app:
   cors:
     # Frontend dev server origins allowed to call the API (comma-separated)
     allowed-origins: http://localhost:3000,http://localhost:5173
+  auth:
+    cookie-name: bookshelf_session
+    session-duration: 7d
+    # Set true whenever the app is served over HTTPS
+    cookie-secure: false
+    max-sign-in-age: 5m
+
+firebase:
+  # Project id belongs in the gitignored application-local.yml (firebase.project-id)
+  service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:$HOME/.secrets/firebase-service-account.json}
 
 anthropic:
   model: ${ANTHROPIC_MODEL:claude-sonnet-5-5}

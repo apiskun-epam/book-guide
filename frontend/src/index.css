@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 
 :root {
+  --topbar-height: 64px;
   /* Typography */
   --font-display: 'Playfair Display', 'Spectral', Georgia, serif;
   --font-body: 'IBM Plex Sans', 'DM Sans', Verdana, sans-serif;

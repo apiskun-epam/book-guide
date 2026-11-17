@@ -1,10 +1,12 @@
 package com.bookshelf.agents;
 
+import com.bookshelf.auth.AuthenticatedUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -29,10 +31,11 @@ public class BookSuggestionController {
      * @return SuggestionResponse with 5 book candidates
      */
     @PostMapping
-    public ResponseEntity<SuggestionResponse> getSuggestions(@Valid @RequestBody SuggestionRequest request) {
-        // TODO: Replace with authenticated user ID from Firebase token
-        String userId = "demo-user";
-        
+    public ResponseEntity<SuggestionResponse> getSuggestions(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody SuggestionRequest request) {
+        String userId = user.uid();
+
         log.info("Received suggestion request from user: {}", userId);
         log.debug("User prompt: {}", request.getPrompt());
         
@@ -48,9 +51,10 @@ public class BookSuggestionController {
      * Events: "message" (intro text), "suggestion" (one BookCandidate each), "done", "error".
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamSuggestions(@Valid @RequestBody SuggestionRequest request) {
-        // TODO: Replace with authenticated user ID from Firebase token
-        String userId = "demo-user";
+    public SseEmitter streamSuggestions(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody SuggestionRequest request) {
+        String userId = user.uid();
         String prompt = request.getPrompt();
 
         SseEmitter emitter = new SseEmitter(120_000L);
