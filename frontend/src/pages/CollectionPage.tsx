@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getCollection, updateBookRating, removeBookFromCollection, undoBookRemoval, Book } from '../api/client';
-import SearchBar from '../components/SearchBar';
+import { useCollectionRefresh } from '../components/CollectionRefresh';
 import BookDetailSidebar from '../components/BookDetailSidebar';
 import { useToast } from '../components/ToastProvider';
 import './CollectionPage.css';
@@ -10,6 +10,7 @@ const UNDO_WINDOW_MS = 5000;
 
 const CollectionPage: React.FC = () => {
   const { showToast } = useToast();
+  const { version: refreshVersion } = useCollectionRefresh();
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,9 +31,10 @@ const CollectionPage: React.FC = () => {
     }
   };
 
+  // Reload on mount and whenever a book is added from the top bar search.
   useEffect(() => {
     fetchCollection();
-  }, []);
+  }, [refreshVersion]);
 
   const handleRatingChange = async (bookId: number, newRating: number) => {
     try {
@@ -93,13 +95,14 @@ const CollectionPage: React.FC = () => {
           <h2 className="collection-title">Collection</h2>
           <span className="collection-tab">All books</span>
         </div>
-        <SearchBar onBookAdded={fetchCollection} />
       </header>
 
       {books.length === 0 ? (
         <div className="empty-state">
-          <p className="empty-title">Your collection is empty</p>
-          <p>Search for books above to get started.</p>
+          <p className="empty-title">
+            No books in your collection just yet. Ready to find your next read? Use search bar, or a
+            suggestion bot to get started
+          </p>
         </div>
       ) : (
         <ul className="books-list">

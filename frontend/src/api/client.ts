@@ -1,4 +1,70 @@
-const API_BASE_URL = 'http://localhost:8080/api';
+// Relative, so requests go through the Vite dev proxy and stay same-origin with the session cookie.
+const API_BASE_URL = '/api';
+
+let unauthorizedHandler: (() => void) | null = null;
+
+/** Registered by AuthProvider: called whenever the API answers 401 (session missing or expired). */
+export const setUnauthorizedHandler = (handler: (() => void) | null): void => {
+  unauthorizedHandler = handler;
+};
+
+/**
+ * Single entry point for API calls. The session lives in an HttpOnly cookie, so the browser sends
+ * it automatically; the custom header is the CSRF marker the backend requires on every request.
+ */
+const apiFetch = async (path: string, init: RequestInit = {}): Promise<Response> => {
+  const headers = new Headers(init.headers);
+  headers.set('X-Requested-With', 'bookshelf');
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'same-origin',
+  });
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+  }
+  return response;
+};
+
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  name: string | null;
+  picture: string | null;
+}
+
+/** Returns the signed-in user, or null when there is no valid session. */
+export const getCurrentUser = async (): Promise<AuthUser | null> => {
+  const response = await apiFetch('/auth/me');
+  if (response.status === 401) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error('Failed to load session');
+  }
+  return response.json();
+};
+
+/** Exchanges a Firebase ID token for the server-side session cookie. */
+export const createSession = async (idToken: string): Promise<AuthUser> => {
+  const response = await apiFetch('/auth/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to sign in');
+  }
+  return response.json();
+};
+
+/** Revokes the session on the server and clears the cookie. */
+export const logout = async (): Promise<void> => {
+  const response = await apiFetch('/auth/logout', { method: 'POST' });
+  if (!response.ok) {
+    throw new Error('Failed to sign out');
+  }
+};
 
 export interface BookSearchResult {
   title: string;
@@ -33,7 +99,7 @@ export interface AddBookRequest {
 }
 
 export const searchBooks = async (query: string): Promise<BookSearchResult[]> => {
-  const response = await fetch(`${API_BASE_URL}/books/search?q=${encodeURIComponent(query)}`);
+  const response = await apiFetch(`/books/search?q=${encodeURIComponent(query)}`);
   if (!response.ok) {
     throw new Error('Failed to search books');
   }
@@ -41,7 +107,7 @@ export const searchBooks = async (query: string): Promise<BookSearchResult[]> =>
 };
 
 export const getCollection = async (): Promise<Book[]> => {
-  const response = await fetch(`${API_BASE_URL}/collection`);
+  const response = await apiFetch(`/collection`);
   if (!response.ok) {
     throw new Error('Failed to fetch collection');
   }
@@ -49,7 +115,7 @@ export const getCollection = async (): Promise<Book[]> => {
 };
 
 export const addBookToCollection = async (book: AddBookRequest): Promise<Book> => {
-  const response = await fetch(`${API_BASE_URL}/collection`, {
+  const response = await apiFetch(`/collection`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -63,7 +129,7 @@ export const addBookToCollection = async (book: AddBookRequest): Promise<Book> =
 };
 
 export const updateBookRating = async (bookId: number, rating: number): Promise<Book> => {
-  const response = await fetch(`${API_BASE_URL}/collection/${bookId}/rating?rating=${rating}`, {
+  const response = await apiFetch(`/collection/${bookId}/rating?rating=${rating}`, {
     method: 'PATCH',
   });
   if (!response.ok) {
@@ -73,7 +139,7 @@ export const updateBookRating = async (bookId: number, rating: number): Promise<
 };
 
 export const removeBookFromCollection = async (bookId: number): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/collection/${bookId}`, {
+  const response = await apiFetch(`/collection/${bookId}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
@@ -82,7 +148,7 @@ export const removeBookFromCollection = async (bookId: number): Promise<void> =>
 };
 
 export const undoBookRemoval = async (bookId: number): Promise<Book> => {
-  const response = await fetch(`${API_BASE_URL}/collection/${bookId}/undo-removal`, {
+  const response = await apiFetch(`/collection/${bookId}/undo-removal`, {
     method: 'POST',
   });
   if (!response.ok) {
@@ -107,7 +173,7 @@ export interface SuggestionResponse {
 }
 
 export const getBookSuggestions = async (prompt: string): Promise<SuggestionResponse> => {
-  const response = await fetch(`${API_BASE_URL}/suggestions`, {
+  const response = await apiFetch(`/suggestions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -134,7 +200,7 @@ export const streamBookSuggestions = async (
   prompt: string,
   { onMessage, onSuggestion, signal }: SuggestionStreamHandlers,
 ): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/suggestions/stream`, {
+  const response = await apiFetch(`/suggestions/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify({ prompt }),

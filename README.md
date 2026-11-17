@@ -33,7 +33,7 @@ This is a local proof-of-concept application consisting of two main components:
 
 ```
 /backend          Spring Boot service (Maven)
-  /src/main/java/.../auth        Firebase ID token verification
+  /src/main/java/.../auth        Session cookie auth (Firebase Admin, Spring Security)
   /src/main/java/.../books       Catalog search client, book entities
   /src/main/java/.../lists       Reading List and Already Read services and APIs
   /src/main/java/.../agents      Multi-agent orchestrator, agent prompts, guard step
@@ -120,7 +120,7 @@ npm run lint                    # ESLint
 ## Security
 
 - All authentication is handled through Firebase with Google sign-in
-- Firebase ID tokens are verified server-side for every API request
+- A Firebase session cookie (HttpOnly, SameSite=Strict, 7 days, revoked on logout) is verified server-side for every API request
 - User identity is derived solely from verified tokens, never from client input
 - All user data queries are scoped to the authenticated user's UID
 - Sensitive data is encrypted at rest using AES-256-GCM

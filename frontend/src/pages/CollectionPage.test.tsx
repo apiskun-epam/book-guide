@@ -19,6 +19,9 @@ const dune: api.Book = {
   updatedAt: '2026-01-01T00:00:00',
 };
 
+const EMPTY_TEXT =
+  'No books in your collection just yet. Ready to find your next read? Use search bar, or a suggestion bot to get started';
+
 const setup = () => render(<CollectionPage />, { wrapper: ToastProvider });
 
 describe('CollectionPage', () => {
@@ -30,7 +33,7 @@ describe('CollectionPage', () => {
   it('shows the empty state when there are no books', async () => {
     vi.mocked(api.getCollection).mockResolvedValue([]);
     setup();
-    expect(await screen.findByText('Your collection is empty')).toBeTruthy();
+    expect(await screen.findByText(EMPTY_TEXT)).toBeTruthy();
   });
 
   it('shows an error state when loading fails', async () => {
@@ -49,7 +52,7 @@ describe('CollectionPage', () => {
 
     expect(confirm).not.toHaveBeenCalled();
     expect(api.removeBookFromCollection).toHaveBeenCalledWith(1);
-    expect(await screen.findByText('Your collection is empty')).toBeTruthy();
+    expect(await screen.findByText(EMPTY_TEXT)).toBeTruthy();
     expect(screen.getByRole('status').textContent).toContain('"Dune" removed');
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
   });
@@ -60,7 +63,7 @@ describe('CollectionPage', () => {
     setup();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-    await screen.findByText('Your collection is empty');
+    await screen.findByText(EMPTY_TEXT);
     vi.mocked(api.getCollection).mockResolvedValue([dune]);
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
 

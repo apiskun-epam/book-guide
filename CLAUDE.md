@@ -10,22 +10,22 @@ Scope: this is a **local proof of concept**. Do not add cloud hosting, deploymen
 
 ## Tech stack
 
-- **Backend:** Java 21, Spring Boot 3, Lombok, Spring Data JPA, SQLite, Flyway migrations, JUnit 5, Mockito, Firebase Admin SDK
+- **Backend:** Java 21, Spring Boot 3, Lombok, Spring Data JPA, SQLite, Flyway migrations, JUnit 5, Mockito, Firebase Admin SDK, Spring Security
 - **Frontend:** React 18, TypeScript (strict mode), Vite, Vitest, React Testing Library
-- **Auth:** Firebase Auth with Google sign-in only. No other providers.
+- **Auth:** Firebase Auth with Google sign-in only. No other providers. The backend turns the Google ID token into an HttpOnly session cookie (Spring Security, stateless).
 - **AI:** Claude API called server-side only, via the Anthropic Messages API
 
 ## Repository layout
 
 ```
 /backend          Spring Boot service (Maven)
-  /src/main/java/.../auth        Firebase ID token verification
+  /src/main/java/.../auth        Session cookie auth: AuthService, filters, SecurityConfig, AuthController
   /src/main/java/.../books       Catalog search client, book entities
   /src/main/java/.../lists       Reading List and Already Read services and APIs
   /src/main/java/.../agents      Multi-agent orchestrator, agent prompts, guard step
   /src/main/resources/db/migration   Flyway SQL migrations
 /frontend         React + TypeScript SPA (Vite)
-  /src/auth        AuthPage.tsx, firebase.ts, getIdToken.ts
+  /src/auth        AuthPage.tsx, AuthProvider.tsx (useAuth), firebase.ts
   /src/features    Search, lists, chat
 /docs             Architecture deck and notes
 ```
@@ -55,13 +55,13 @@ Before reporting a task as done, run the tests and type check for the part you c
 ## Configuration and secrets
 
 - Frontend config lives in `frontend/.env.local`, created from `.env.example`. Never commit `.env.local`.
-- Backend Firebase project ID is set in `application-local.yml`. The Firebase Admin service account JSON path comes from the `FIREBASE_SERVICE_ACCOUNT_PATH` environment variable. Never commit the JSON file.
+- Backend Firebase project ID is set in `application-local.yml` (`firebase.project-id`). The Firebase Admin service account JSON path comes from the `FIREBASE_SERVICE_ACCOUNT_PATH` environment variable. Never commit the JSON file.
 - The Claude API key comes from `ANTHROPIC_API_KEY`. Never hard-code it, log it, or send it to the frontend.
 - Add all secrets and local DB files to `.gitignore`. The SQLite file lives at `backend/data/bookshelf.db` and must not be committed.
 
 ## Architecture rules
 
-1. **Identity comes from the verified token only.** Every backend endpoint except health checks requires a Firebase ID token in `Authorization: Bearer <token>`. Verify it with the Firebase Admin SDK. Take the user ID from the verified token's UID. Never accept a user ID from the request body, path, or query string.
+1. **Identity comes from the verified session cookie only.** Sign-in: the SPA sends the Firebase ID token once to `POST /api/auth/session`; the backend verifies it (Google provider only, recent sign-in) and sets a Firebase session cookie (`bookshelf_session`, HttpOnly, SameSite=Strict, Path=/api, 7 days, `Secure` via `app.auth.cookie-secure`). Every endpoint except `POST /api/auth/session` and `POST /api/auth/logout` requires that cookie, verified with revocation checking. Take the user ID from the verified principal (`@AuthenticationPrincipal AuthenticatedUser`). Never accept a user ID from the request body, path, or query string. Logout revokes the user's refresh tokens so the cookie stops working immediately. The frontend uses relative `/api` URLs (Vite proxy) so the cookie stays same-origin and never stores tokens in browser storage. All state-changing requests must send `X-Requested-With: bookshelf` (CSRF defence); the shared `apiFetch` in `src/api/client.ts` does this.
 2. **Users are keyed by Firebase UID.** Each collection row references `user_id` (the Firebase UID). Every query on user data must filter by the authenticated user's UID. Add a test for this whenever a new user-data endpoint is added.
 3. **The model never enforces list exclusion.** Books already in a user's lists are removed by a deterministic guard step in Java, after the candidate agent runs and before the response agent. Do not rely on prompt instructions for this. Normalize titles and ISBNs before comparing.
 4. **Agents are a plain Spring orchestration.** The pipeline is intake, preference, candidate, guard, response. Each agent call uses a strict JSON schema for its output, a timeout, and one retry. Keep agent prompts in resource files, not inline strings.
@@ -89,7 +89,7 @@ Before reporting a task as done, run the tests and type check for the part you c
 - TypeScript strict mode. No `any` unless there is a comment explaining why.
 - Components are function components with typed props.
 - Feature code lives in `src/features/<feature>`. Shared UI goes in `src/components`.
-- Auth-related code stays in `src/auth`. Read the token only through `getApiToken()`.
+- Auth-related code stays in `src/auth`. Components read the signed-in user through `useAuth()`; there is no token in JS (the session is an HttpOnly cookie). Make API calls only through `src/api/client.ts`.
 - **Icons live in the icon library, `src/components/icons`.** Never define an icon or inline an `<svg>` inside a component. Add a new icon as its own file there (built on the shared `Icon` wrapper), export it from `icons/index.ts`, and import it with `import { LibraryIcon } from './icons'`.
 - Show loading, empty, and error states for every data view.
 - **Notifications are toasts, always.** Never use `alert()`, `confirm()`, or `prompt()`. Show every success, error, and undo message through `useToast()` from `src/components/ToastProvider`, which stacks styled toasts in the bottom-left corner. Do not render `Toast` directly or create page-specific notification styles; all notifications share the look in `Toast.css`. Destructive actions are not confirmed with a dialog: perform them, then offer an Undo action on the toast.
@@ -106,7 +106,7 @@ Before reporting a task as done, run the tests and type check for the part you c
 ## Security checklist for changes
 
 Before finishing any change that touches auth, data, or the API, check:
-- [ ] Every new endpoint verifies the Firebase ID token.
+- [ ] Every new endpoint requires an authenticated session (the default in `SecurityConfig`).
 - [ ] No user ID is taken from client input.
 - [ ] Queries are scoped to the authenticated UID.
 - [ ] No secrets, API keys, or service account contents appear in code, logs, or responses.
