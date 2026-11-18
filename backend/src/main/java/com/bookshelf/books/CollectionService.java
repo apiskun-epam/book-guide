@@ -8,8 +8,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
+/** Manages both of a user's lists: the rated collection and the unrated reading list. */
 @Service
 @RequiredArgsConstructor
 public class CollectionService {
@@ -20,52 +20,64 @@ public class CollectionService {
     private final BookRepository bookRepository;
     private final Clock clock;
 
-    public List<BookDTO> getUserCollection(String userId) {
-        return bookRepository.findByUserId(userId)
+    public List<BookDTO> getBooks(String userId, ListType listType) {
+        return bookRepository.findByUserIdAndListType(userId, listType)
                 .stream()
                 .map(BookDTO::new)
-                .collect(Collectors.toList());
+                .toList();
     }
 
+    /**
+     * Adds a book to the given list. A book (by ISBN) may be in only one list, so the duplicate
+     * check covers both. Reading-list books are never rated.
+     */
     @Transactional
-    public BookDTO addBookToCollection(String userId, AddBookRequest request) {
-        // Check if book already exists in user's collection
-        if (request.getIsbn() != null && !request.getIsbn().isEmpty()) {
-            if (bookRepository.existsByUserIdAndIsbn(userId, request.getIsbn())) {
-                throw new IllegalArgumentException("Book already exists in your collection");
-            }
+    public BookDTO addBook(String userId, AddBookRequest request, ListType listType) {
+        if (hasIsbn(request.getIsbn()) && bookRepository.existsByUserIdAndIsbn(userId, request.getIsbn())) {
+            throw new DuplicateBookException();
         }
 
         Book book = Book.builder()
                 .userId(userId)
+                .listType(listType)
                 .title(request.getTitle())
                 .author(request.getAuthor())
                 .isbn(request.getIsbn())
                 .coverUrl(request.getCoverUrl())
                 .publishYear(request.getPublishYear())
                 .description(request.getDescription())
-                .rating(request.getRating())
+                .rating(listType == ListType.COLLECTION ? request.getRating() : null)
                 .build();
 
-        Book savedBook = bookRepository.save(book);
-        return new BookDTO(savedBook);
+        return new BookDTO(bookRepository.save(book));
     }
 
+    /** Only collection books can be rated. */
     @Transactional
     public BookDTO updateBookRating(String userId, Integer bookId, Integer rating) {
-        Book book = bookRepository.findByIdAndUserId(bookId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("Book not found"));
+        Book book = bookRepository.findByIdAndUserIdAndListType(bookId, userId, ListType.COLLECTION)
+                .orElseThrow(BookNotFoundException::new);
 
         book.setRating(rating);
-        Book updatedBook = bookRepository.save(book);
-        return new BookDTO(updatedBook);
+        return new BookDTO(bookRepository.save(book));
+    }
+
+    /** Moves a reading-list book into the collection in place, with an optional rating. */
+    @Transactional
+    public BookDTO moveToCollection(String userId, Integer bookId, Integer rating) {
+        Book book = bookRepository.findByIdAndUserIdAndListType(bookId, userId, ListType.READING_LIST)
+                .orElseThrow(BookNotFoundException::new);
+
+        book.setListType(ListType.COLLECTION);
+        book.setRating(rating);
+        return new BookDTO(bookRepository.save(book));
     }
 
     /** Hides the book and schedules its permanent deletion after {@link #UNDO_WINDOW}. */
     @Transactional
-    public void removeBookFromCollection(String userId, Integer bookId) {
-        Book book = bookRepository.findByIdAndUserId(bookId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("Book not found"));
+    public void removeBook(String userId, Integer bookId, ListType listType) {
+        Book book = bookRepository.findByIdAndUserIdAndListType(bookId, userId, listType)
+                .orElseThrow(BookNotFoundException::new);
 
         book.setDeletionScheduledAt(LocalDateTime.now(clock).plus(UNDO_WINDOW));
         bookRepository.save(book);
@@ -73,18 +85,17 @@ public class CollectionService {
 
     /**
      * Cancels a scheduled removal. Fails if the book is not pending deletion (e.g. already purged)
-     * or if an active book with the same ISBN has since been added.
+     * or if an active book with the same ISBN has since been added to either list.
      */
     @Transactional
-    public BookDTO undoRemoval(String userId, Integer bookId) {
-        Book book = bookRepository.findPendingDeletion(bookId, userId)
+    public BookDTO undoRemoval(String userId, Integer bookId, ListType listType) {
+        Book book = bookRepository.findPendingDeletion(bookId, userId, listType)
                 .filter(b -> b.getDeletionScheduledAt().isAfter(LocalDateTime.now(clock)))
-                .orElseThrow(() -> new IllegalArgumentException("Book not found"));
+                .orElseThrow(BookNotFoundException::new);
 
         // The book may have been re-added while its removal was pending; don't create a duplicate.
-        if (book.getIsbn() != null && !book.getIsbn().isEmpty()
-                && bookRepository.existsByUserIdAndIsbn(userId, book.getIsbn())) {
-            throw new IllegalArgumentException("Book already exists in your collection");
+        if (hasIsbn(book.getIsbn()) && bookRepository.existsByUserIdAndIsbn(userId, book.getIsbn())) {
+            throw new DuplicateBookException();
         }
 
         book.setDeletionScheduledAt(null);
@@ -95,5 +106,9 @@ public class CollectionService {
     @Transactional
     public int purgeExpiredRemovals() {
         return bookRepository.deleteExpired(LocalDateTime.now(clock));
+    }
+
+    private static boolean hasIsbn(String isbn) {
+        return isbn != null && !isbn.isEmpty();
     }
 }

@@ -3,11 +3,13 @@ package com.bookshelf.agents;
 import com.bookshelf.books.Book;
 import com.bookshelf.books.BookRepository;
 import com.bookshelf.books.BookSearchService;
+import com.bookshelf.books.ListType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +21,7 @@ public class BookSuggestionOrchestrator {
     private final CandidateAgent candidateAgent;
     private final BookRepository bookRepository;
     private final BookSearchService bookSearchService;
+    private final ExclusionGuard exclusionGuard;
 
     /**
      * Orchestrates the multi-agent workflow to generate book suggestions.
@@ -26,11 +29,12 @@ public class BookSuggestionOrchestrator {
      * Pipeline:
      * 1. Intake agent - analyzes user's current request
      * 2. Preference agent - analyzes user's book collection for preferences
-     * 3. Candidate agent - generates 5 book recommendations
+     * 3. Candidate agent - generates book recommendations
+     * 4. Guard - drops books already in the user's collection or reading list
      * 
      * @param userId The authenticated user's Firebase UID
      * @param userPrompt The user's book request message
-     * @return SuggestionResponse containing 5 book candidates
+     * @return SuggestionResponse containing the book candidates that passed the guard
      */
     public SuggestionResponse generateSuggestions(String userId, String userPrompt) {
         log.info("Starting book suggestion workflow for user: {}", userId);
@@ -43,8 +47,8 @@ public class BookSuggestionOrchestrator {
             
             // Step 2: Preference - analyze user's collection
             log.debug("Step 2: Running preference agent");
-            List<Book> userBooks = bookRepository.findByUserId(userId);
-            PreferenceResult preferenceResult = preferenceAgent.analyze(userBooks);
+            List<Book> allBooks = bookRepository.findByUserId(userId);
+            PreferenceResult preferenceResult = preferenceAgent.analyze(readBooks(allBooks));
             log.debug("Preference result: {}", preferenceResult);
             
             // Step 3: Candidate - generate recommendations
@@ -52,17 +56,16 @@ public class BookSuggestionOrchestrator {
             CandidateResult candidateResult = candidateAgent.generateCandidates(intakeResult, preferenceResult);
             log.debug("Generated {} candidates", candidateResult.getCandidates().size());
             
-            candidateResult.getCandidates().forEach(this::attachCover);
+            // Step 4: Guard - remove books the user already has in either list
+            List<BookCandidate> candidates = exclusionGuard.filter(candidateResult.getCandidates(), allBooks);
+            candidates.forEach(this::attachCover);
 
             // Build response
-            String message = buildResponseMessage(intakeResult, userBooks.size());
-            SuggestionResponse response = new SuggestionResponse(
-                    candidateResult.getCandidates(),
-                    message
-            );
+            String message = buildResponseMessage(intakeResult, readBooks(allBooks).size());
+            SuggestionResponse response = new SuggestionResponse(candidates, message);
             
             log.info("Successfully generated {} suggestions for user: {}", 
-                    candidateResult.getCandidates().size(), userId);
+                    candidates.size(), userId);
             
             return response;
             
@@ -82,12 +85,17 @@ public class BookSuggestionOrchestrator {
         try {
             IntakeResult intakeResult = intakeAgent.analyze(userPrompt);
 
-            List<Book> userBooks = bookRepository.findByUserId(userId);
-            PreferenceResult preferenceResult = preferenceAgent.analyze(userBooks);
+            List<Book> allBooks = bookRepository.findByUserId(userId);
+            List<Book> readBooks = readBooks(allBooks);
+            PreferenceResult preferenceResult = preferenceAgent.analyze(readBooks);
+            Predicate<BookCandidate> allowed = exclusionGuard.allowedAgainst(allBooks);
 
-            listener.onMessage(buildResponseMessage(intakeResult, userBooks.size()));
+            listener.onMessage(buildResponseMessage(intakeResult, readBooks.size()));
 
             candidateAgent.streamCandidates(intakeResult, preferenceResult, candidate -> {
+                if (!allowed.test(candidate)) {
+                    return;
+                }
                 attachCover(candidate);
                 listener.onSuggestion(candidate);
             });
@@ -95,6 +103,11 @@ public class BookSuggestionOrchestrator {
             log.error("Error streaming book suggestions for user: {}", userId, e);
             throw new RuntimeException("Failed to generate book suggestions. Please try again.", e);
         }
+    }
+
+    /** Preferences are learned from books the user has read, not from the reading list. */
+    private static List<Book> readBooks(List<Book> allBooks) {
+        return allBooks.stream().filter(b -> b.getListType() == ListType.COLLECTION).toList();
     }
 
     private void attachCover(BookCandidate candidate) {
@@ -120,7 +133,7 @@ public class BookSuggestionOrchestrator {
             message.append(" and your reading history");
         }
         
-        message.append(", here are 5 personalized book recommendations for you:");
+        message.append(", here are some personalized book recommendations for you:");
         
         return message.toString();
     }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { searchBooks, addBookToCollection, BookSearchResult } from '../api/client';
-import BookDetailModal from './BookDetailModal';
+import { searchBooks, addBookToCollection, addBookToReadingList, BookSearchResult } from '../api/client';
+import BookDetailModal, { AddTarget } from './BookDetailModal';
 import { useToast } from './ToastProvider';
 import './SearchBar.css';
 
@@ -82,24 +82,29 @@ const SearchBar: React.FC<{ onBookAdded: () => void }> = ({ onBookAdded }) => {
     setShowResults(false);
   };
 
-  const handleAddBook = async (book: BookSearchResult, rating: number) => {
+  const handleAddBook = async (book: BookSearchResult, target: AddTarget, rating: number) => {
+    const listName = target === 'COLLECTION' ? 'collection' : 'reading list';
+    const details = {
+      title: book.title,
+      author: book.author || undefined,
+      isbn: book.isbn || undefined,
+      coverUrl: book.coverUrl || undefined,
+      publishYear: book.publishYear || undefined,
+      description: book.description || undefined,
+    };
     try {
-      await addBookToCollection({
-        title: book.title,
-        author: book.author || undefined,
-        isbn: book.isbn || undefined,
-        coverUrl: book.coverUrl || undefined,
-        publishYear: book.publishYear || undefined,
-        description: book.description || undefined,
-        rating,
-      });
+      if (target === 'COLLECTION') {
+        await addBookToCollection({ ...details, rating });
+      } else {
+        await addBookToReadingList(details);
+      }
       setSelectedBook(null);
       setQuery('');
       onBookAdded();
-      showToast(`"${book.title}" added to your collection!`);
+      showToast(`"${book.title}" added to your ${listName}!`);
     } catch (error) {
       console.error('Failed to add book:', error);
-      showToast('Failed to add book to collection', { variant: 'error' });
+      showToast(`Failed to add book to ${listName}. It may already be in your lists.`, { variant: 'error' });
     }
   };
 

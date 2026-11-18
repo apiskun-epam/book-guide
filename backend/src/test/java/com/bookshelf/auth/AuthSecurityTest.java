@@ -4,6 +4,7 @@ import com.bookshelf.agents.BookSuggestionController;
 import com.bookshelf.agents.BookSuggestionOrchestrator;
 import com.bookshelf.books.BookDTO;
 import com.bookshelf.books.CollectionController;
+import com.bookshelf.books.ReadingListController;
 import com.bookshelf.books.CollectionService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Checks the security chain over the real controllers, with Firebase mocked. */
-@WebMvcTest(controllers = {AuthController.class, CollectionController.class, BookSuggestionController.class},
+@WebMvcTest(controllers = {AuthController.class, CollectionController.class, ReadingListController.class,
+        BookSuggestionController.class},
         properties = "app.cors.allowed-origins=http://localhost:3000")
 @Import(SecurityConfig.class)
 class AuthSecurityTest {
@@ -82,26 +84,26 @@ class AuthSecurityTest {
 
     @Test
     void collection_usesUidFromVerifiedSession_andIgnoresClientSuppliedUserId() throws Exception {
-        when(collectionService.getUserCollection("uid-a")).thenReturn(List.of(new BookDTO()));
+        when(collectionService.getBooks("uid-a", com.bookshelf.books.ListType.COLLECTION)).thenReturn(List.of(new BookDTO()));
 
         mockMvc.perform(get("/api/collection").param("userId", "uid-b").cookie(cookie("cookie-a")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
 
-        verify(collectionService).getUserCollection("uid-a");
-        verify(collectionService, never()).getUserCollection("uid-b");
+        verify(collectionService).getBooks("uid-a", com.bookshelf.books.ListType.COLLECTION);
+        verify(collectionService, never()).getBooks("uid-b", com.bookshelf.books.ListType.COLLECTION);
     }
 
     @Test
     void collection_userBNeverSeesUserAData() throws Exception {
-        when(collectionService.getUserCollection("uid-a")).thenReturn(List.of(new BookDTO()));
-        when(collectionService.getUserCollection("uid-b")).thenReturn(List.of());
+        when(collectionService.getBooks("uid-a", com.bookshelf.books.ListType.COLLECTION)).thenReturn(List.of(new BookDTO()));
+        when(collectionService.getBooks("uid-b", com.bookshelf.books.ListType.COLLECTION)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/collection").cookie(cookie("cookie-b")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
 
-        verify(collectionService, never()).getUserCollection("uid-a");
+        verify(collectionService, never()).getBooks("uid-a", com.bookshelf.books.ListType.COLLECTION);
     }
 
     @Test
@@ -111,8 +113,38 @@ class AuthSecurityTest {
                         .header("X-Requested-With", "bookshelf"))
                 .andExpect(status().isNoContent());
 
-        verify(collectionService).removeBookFromCollection("uid-b", 5);
-        verify(collectionService, never()).removeBookFromCollection(eq("uid-a"), anyInt());
+        verify(collectionService).removeBook("uid-b", 5, com.bookshelf.books.ListType.COLLECTION);
+        verify(collectionService, never()).removeBook(eq("uid-a"), anyInt(), any());
+    }
+
+    @Test
+    void readingList_userBNeverSeesUserAData() throws Exception {
+        when(collectionService.getBooks("uid-a", com.bookshelf.books.ListType.READING_LIST)).thenReturn(List.of(new BookDTO()));
+        when(collectionService.getBooks("uid-b", com.bookshelf.books.ListType.READING_LIST)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/reading-list").param("userId", "uid-a").cookie(cookie("cookie-b")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(collectionService, never()).getBooks(eq("uid-a"), any());
+    }
+
+    @Test
+    void readingList_withoutSession_isUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/reading-list")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void moveToCollection_scopesToAuthenticatedUser() throws Exception {
+        mockMvc.perform(post("/api/reading-list/5/move-to-collection")
+                        .cookie(cookie("cookie-b"))
+                        .header("X-Requested-With", "bookshelf")
+                        .contentType("application/json")
+                        .content("{\"rating\":4}"))
+                .andExpect(status().isOk());
+
+        verify(collectionService).moveToCollection("uid-b", 5, 4);
+        verify(collectionService, never()).moveToCollection(eq("uid-a"), anyInt(), any());
     }
 
     @Test
@@ -120,7 +152,7 @@ class AuthSecurityTest {
         mockMvc.perform(delete("/api/collection/5").cookie(cookie("cookie-a")))
                 .andExpect(status().isForbidden());
 
-        verify(collectionService, never()).removeBookFromCollection(any(), anyInt());
+        verify(collectionService, never()).removeBook(any(), anyInt(), any());
     }
 
     @Test

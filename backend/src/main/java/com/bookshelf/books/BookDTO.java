@@ -16,6 +16,7 @@ public class BookDTO {
     private Integer publishYear;
     private String description;
     private Integer rating;
+    private ListType listType;
     private LocalDateTime addedAt;
     private LocalDateTime updatedAt;
 
@@ -28,6 +29,7 @@ public class BookDTO {
         this.publishYear = book.getPublishYear();
         this.description = book.getDescription();
         this.rating = book.getRating();
+        this.listType = book.getListType();
         this.addedAt = book.getAddedAt();
         this.updatedAt = book.getUpdatedAt();
     }

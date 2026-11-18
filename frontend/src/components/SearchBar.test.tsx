@@ -102,3 +102,52 @@ describe('SearchBar typeahead', () => {
     expect(search).toHaveBeenCalledWith('up');
   });
 });
+
+describe('SearchBar adding books', () => {
+  const openModal = async () => {
+    vi.mocked(client.searchBooks).mockResolvedValue([book('Dune')]);
+    const onBookAdded = vi.fn();
+    render(<SearchBar onBookAdded={onBookAdded} />, { wrapper: ToastProvider });
+    type('dune');
+    await advance(DEBOUNCE_MS);
+    fireEvent.click(screen.getByText('Dune'));
+    return onBookAdded;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(client.addBookToCollection).mockReset();
+    vi.mocked(client.addBookToReadingList).mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('adds to the reading list by default, without a rating', async () => {
+    vi.mocked(client.addBookToReadingList).mockResolvedValue({} as client.Book);
+    const onBookAdded = await openModal();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add to Reading list' }));
+    });
+
+    expect(client.addBookToReadingList).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(client.addBookToReadingList).mock.calls[0]![0]).not.toHaveProperty('rating');
+    expect(client.addBookToCollection).not.toHaveBeenCalled();
+    expect(onBookAdded).toHaveBeenCalled();
+  });
+
+  it('adds to the collection with the chosen rating', async () => {
+    vi.mocked(client.addBookToCollection).mockResolvedValue({} as client.Book);
+    await openModal();
+
+    fireEvent.click(screen.getByLabelText('Add to my Collection'));
+    fireEvent.click(screen.getByLabelText('Rate 5 out of 5'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add to my Collection' }));
+    });
+
+    expect(client.addBookToCollection).toHaveBeenCalledWith(expect.objectContaining({ title: 'Dune', rating: 5 }));
+    expect(client.addBookToReadingList).not.toHaveBeenCalled();
+  });
+});

@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Navigation from './components/Navigation';
 import TopBar from './components/TopBar';
 import CollectionPage from './pages/CollectionPage';
+import ReadingListPage from './pages/ReadingListPage';
 import ChatPage from './features/chat/ChatPage';
 import { ToastProvider } from './components/ToastProvider';
 import { CollectionRefreshProvider } from './components/CollectionRefresh';
@@ -29,6 +30,7 @@ function AuthGate() {
           <Routes>
             <Route path="/" element={<Navigate to="/collection" replace />} />
             <Route path="/collection" element={<CollectionPage />} />
+            <Route path="/reading-list" element={<ReadingListPage />} />
             <Route path="/discover" element={<ChatPage />} />
           </Routes>
         </main>

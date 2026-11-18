@@ -75,8 +75,11 @@ export interface BookSearchResult {
   description: string | null;
 }
 
+export type ListType = 'COLLECTION' | 'READING_LIST';
+
 export interface Book {
   id: number;
+  listType: ListType;
   title: string;
   author: string | null;
   isbn: string | null;
@@ -153,6 +156,62 @@ export const undoBookRemoval = async (bookId: number): Promise<Book> => {
   });
   if (!response.ok) {
     throw new Error('Failed to undo removal');
+  }
+  return response.json();
+};
+
+export const getReadingList = async (): Promise<Book[]> => {
+  const response = await apiFetch(`/reading-list`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch reading list');
+  }
+  return response.json();
+};
+
+export const addBookToReadingList = async (book: AddBookRequest): Promise<Book> => {
+  const response = await apiFetch(`/reading-list`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(book),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to add book to reading list');
+  }
+  return response.json();
+};
+
+export const removeBookFromReadingList = async (bookId: number): Promise<void> => {
+  const response = await apiFetch(`/reading-list/${bookId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to remove book');
+  }
+};
+
+export const undoReadingListRemoval = async (bookId: number): Promise<Book> => {
+  const response = await apiFetch(`/reading-list/${bookId}/undo-removal`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to undo removal');
+  }
+  return response.json();
+};
+
+/** Moves a reading-list book into the collection, with an optional rating. */
+export const moveToCollection = async (bookId: number, rating?: number): Promise<Book> => {
+  const response = await apiFetch(`/reading-list/${bookId}/move-to-collection`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ rating }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to move book to collection');
   }
   return response.json();
 };

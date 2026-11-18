@@ -58,21 +58,21 @@ class CollectionServiceTest {
 
     @Test
     void getUserCollectionReturnsMappedBooksForThatUserOnly() {
-        when(bookRepository.findByUserId(USER_A))
+        when(bookRepository.findByUserIdAndListType(USER_A, ListType.COLLECTION))
                 .thenReturn(List.of(book(1, USER_A, "Dune", "111"), book(2, USER_A, "Emma", "222")));
 
-        List<BookDTO> result = service.getUserCollection(USER_A);
+        List<BookDTO> result = service.getBooks(USER_A, ListType.COLLECTION);
 
         assertEquals(List.of("Dune", "Emma"), result.stream().map(BookDTO::getTitle).toList());
-        verify(bookRepository).findByUserId(USER_A);
+        verify(bookRepository).findByUserIdAndListType(USER_A, ListType.COLLECTION);
         verifyNoMoreInteractions(bookRepository);
     }
 
     @Test
     void getUserCollectionReturnsEmptyListWhenUserHasNoBooks() {
-        when(bookRepository.findByUserId(USER_A)).thenReturn(List.of());
+        when(bookRepository.findByUserIdAndListType(USER_A, ListType.COLLECTION)).thenReturn(List.of());
 
-        assertTrue(service.getUserCollection(USER_A).isEmpty());
+        assertTrue(service.getBooks(USER_A, ListType.COLLECTION).isEmpty());
     }
 
     // ---- addBookToCollection ----
@@ -92,7 +92,7 @@ class CollectionServiceTest {
             return b;
         });
 
-        BookDTO dto = service.addBookToCollection(USER_A, req);
+        BookDTO dto = service.addBook(USER_A, req, ListType.COLLECTION);
 
         ArgumentCaptor<Book> saved = ArgumentCaptor.forClass(Book.class);
         verify(bookRepository).save(saved.capture());
@@ -114,9 +114,9 @@ class CollectionServiceTest {
         when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(true);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.addBookToCollection(USER_A, request("Dune", "111")));
+                () -> service.addBook(USER_A, request("Dune", "111"), ListType.COLLECTION));
 
-        assertEquals("Book already exists in your collection", ex.getMessage());
+        assertEquals("Book already exists in your collection or reading list", ex.getMessage());
         verify(bookRepository, never()).save(any());
     }
 
@@ -126,7 +126,7 @@ class CollectionServiceTest {
         when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(false);
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.addBookToCollection(USER_A, request("Dune", "111"));
+        service.addBook(USER_A, request("Dune", "111"), ListType.COLLECTION);
 
         verify(bookRepository).existsByUserIdAndIsbn(USER_A, "111");
         verify(bookRepository, never()).existsByUserIdAndIsbn(USER_B, "111");
@@ -137,8 +137,8 @@ class CollectionServiceTest {
     void addBookSkipsDuplicateCheckWhenIsbnNullOrEmpty() {
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.addBookToCollection(USER_A, request("No ISBN", null));
-        service.addBookToCollection(USER_A, request("Empty ISBN", ""));
+        service.addBook(USER_A, request("No ISBN", null), ListType.COLLECTION);
+        service.addBook(USER_A, request("Empty ISBN", ""), ListType.COLLECTION);
 
         verify(bookRepository, never()).existsByUserIdAndIsbn(any(), any());
         verify(bookRepository, org.mockito.Mockito.times(2)).save(any(Book.class));
@@ -149,7 +149,7 @@ class CollectionServiceTest {
     @Test
     void updateRatingChangesRatingAndSaves() {
         Book existing = book(3, USER_A, "Dune", "111");
-        when(bookRepository.findByIdAndUserId(3, USER_A)).thenReturn(Optional.of(existing));
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.of(existing));
         when(bookRepository.save(existing)).thenReturn(existing);
 
         BookDTO dto = service.updateBookRating(USER_A, 3, 4);
@@ -161,7 +161,7 @@ class CollectionServiceTest {
 
     @Test
     void updateRatingThrowsWhenBookNotFound() {
-        when(bookRepository.findByIdAndUserId(99, USER_A)).thenReturn(Optional.empty());
+        when(bookRepository.findByIdAndUserIdAndListType(99, USER_A, ListType.COLLECTION)).thenReturn(Optional.empty());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.updateBookRating(USER_A, 99, 3));
@@ -173,7 +173,7 @@ class CollectionServiceTest {
     @Test
     void userCannotUpdateRatingOfAnotherUsersBook() {
         // Book 3 belongs to user B; the lookup scoped to user A finds nothing.
-        when(bookRepository.findByIdAndUserId(3, USER_A)).thenReturn(Optional.empty());
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> service.updateBookRating(USER_A, 3, 1));
 
@@ -186,9 +186,9 @@ class CollectionServiceTest {
     void removeBookSchedulesDeletionAfterUndoWindowWithoutDeletingRow() {
         fixClockAtNow();
         Book existing = book(3, USER_A, "Dune", "111");
-        when(bookRepository.findByIdAndUserId(3, USER_A)).thenReturn(Optional.of(existing));
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.of(existing));
 
-        service.removeBookFromCollection(USER_A, 3);
+        service.removeBook(USER_A, 3, ListType.COLLECTION);
 
         assertEquals(NOW.plusSeconds(5), existing.getDeletionScheduledAt());
         verify(bookRepository).save(existing);
@@ -197,10 +197,10 @@ class CollectionServiceTest {
 
     @Test
     void removeBookThrowsWhenBookNotFound() {
-        when(bookRepository.findByIdAndUserId(99, USER_A)).thenReturn(Optional.empty());
+        when(bookRepository.findByIdAndUserIdAndListType(99, USER_A, ListType.COLLECTION)).thenReturn(Optional.empty());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.removeBookFromCollection(USER_A, 99));
+                () -> service.removeBook(USER_A, 99, ListType.COLLECTION));
 
         assertEquals("Book not found", ex.getMessage());
         verify(bookRepository, never()).save(any());
@@ -208,9 +208,9 @@ class CollectionServiceTest {
 
     @Test
     void userCannotRemoveAnotherUsersBook() {
-        when(bookRepository.findByIdAndUserId(3, USER_A)).thenReturn(Optional.empty());
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> service.removeBookFromCollection(USER_A, 3));
+        assertThrows(IllegalArgumentException.class, () -> service.removeBook(USER_A, 3, ListType.COLLECTION));
 
         verify(bookRepository, never()).save(any());
     }
@@ -222,11 +222,11 @@ class CollectionServiceTest {
         fixClockAtNow();
         Book pending = book(3, USER_A, "Dune", "111");
         pending.setDeletionScheduledAt(NOW.plusSeconds(2));
-        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.of(pending));
         when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(false);
         when(bookRepository.save(pending)).thenReturn(pending);
 
-        BookDTO dto = service.undoRemoval(USER_A, 3);
+        BookDTO dto = service.undoRemoval(USER_A, 3, ListType.COLLECTION);
 
         assertNull(pending.getDeletionScheduledAt());
         assertEquals("Dune", dto.getTitle());
@@ -238,9 +238,9 @@ class CollectionServiceTest {
         fixClockAtNow();
         Book pending = book(3, USER_A, "Dune", "111");
         pending.setDeletionScheduledAt(NOW.minusSeconds(1));
-        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.of(pending));
 
-        assertThrows(IllegalArgumentException.class, () -> service.undoRemoval(USER_A, 3));
+        assertThrows(IllegalArgumentException.class, () -> service.undoRemoval(USER_A, 3, ListType.COLLECTION));
 
         assertNotNull(pending.getDeletionScheduledAt());
         verify(bookRepository, never()).save(any());
@@ -251,13 +251,13 @@ class CollectionServiceTest {
         fixClockAtNow();
         Book pending = book(3, USER_A, "Dune", "111");
         pending.setDeletionScheduledAt(NOW.plusSeconds(2));
-        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.of(pending));
         when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(true);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.undoRemoval(USER_A, 3));
+                () -> service.undoRemoval(USER_A, 3, ListType.COLLECTION));
 
-        assertEquals("Book already exists in your collection", ex.getMessage());
+        assertEquals("Book already exists in your collection or reading list", ex.getMessage());
         assertNotNull(pending.getDeletionScheduledAt());
         verify(bookRepository, never()).save(any());
     }
@@ -267,10 +267,10 @@ class CollectionServiceTest {
         fixClockAtNow();
         Book pending = book(3, USER_A, "No ISBN", null);
         pending.setDeletionScheduledAt(NOW.plusSeconds(2));
-        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.of(pending));
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.of(pending));
         when(bookRepository.save(pending)).thenReturn(pending);
 
-        service.undoRemoval(USER_A, 3);
+        service.undoRemoval(USER_A, 3, ListType.COLLECTION);
 
         assertNull(pending.getDeletionScheduledAt());
         verify(bookRepository, never()).existsByUserIdAndIsbn(any(), any());
@@ -278,9 +278,9 @@ class CollectionServiceTest {
 
     @Test
     void undoRemovalFailsWhenBookNotPending() {
-        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.empty());
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> service.undoRemoval(USER_A, 3));
+        assertThrows(IllegalArgumentException.class, () -> service.undoRemoval(USER_A, 3, ListType.COLLECTION));
 
         verify(bookRepository, never()).save(any());
     }
@@ -288,12 +288,103 @@ class CollectionServiceTest {
     @Test
     void userCannotUndoAnotherUsersRemoval() {
         // Book 3 belongs to user B; the lookup scoped to user A finds nothing.
-        when(bookRepository.findPendingDeletion(3, USER_A)).thenReturn(Optional.empty());
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.COLLECTION)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> service.undoRemoval(USER_A, 3));
+        assertThrows(IllegalArgumentException.class, () -> service.undoRemoval(USER_A, 3, ListType.COLLECTION));
 
         verify(bookRepository, never()).save(any());
-        verify(bookRepository, never()).findPendingDeletion(3, USER_B);
+        verify(bookRepository, never()).findPendingDeletion(3, USER_B, ListType.COLLECTION);
+    }
+
+    // ---- reading list ----
+
+    @Test
+    void addToReadingListIgnoresRatingAndSetsListType() {
+        AddBookRequest req = request("Dune", "111");
+        req.setRating(5);
+        when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(false);
+        when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BookDTO dto = service.addBook(USER_A, req, ListType.READING_LIST);
+
+        assertEquals(ListType.READING_LIST, dto.getListType());
+        assertNull(dto.getRating());
+    }
+
+    @Test
+    void addToReadingListRejectsBookAlreadyInCollection() {
+        // The duplicate check is not list-scoped, so a collection book blocks a reading-list add.
+        when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(true);
+
+        assertThrows(DuplicateBookException.class,
+                () -> service.addBook(USER_A, request("Dune", "111"), ListType.READING_LIST));
+
+        verify(bookRepository, never()).save(any());
+    }
+
+    @Test
+    void getReadingListQueriesReadingListOnly() {
+        when(bookRepository.findByUserIdAndListType(USER_A, ListType.READING_LIST))
+                .thenReturn(List.of(book(1, USER_A, "Dune", "111")));
+
+        assertEquals(1, service.getBooks(USER_A, ListType.READING_LIST).size());
+    }
+
+    @Test
+    void moveToCollectionFlipsListAndSetsRating() {
+        Book existing = book(3, USER_A, "Dune", "111");
+        existing.setListType(ListType.READING_LIST);
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.READING_LIST))
+                .thenReturn(Optional.of(existing));
+        when(bookRepository.save(existing)).thenReturn(existing);
+
+        BookDTO dto = service.moveToCollection(USER_A, 3, 4);
+
+        assertEquals(ListType.COLLECTION, existing.getListType());
+        assertEquals(4, dto.getRating());
+    }
+
+    @Test
+    void moveToCollectionAllowsMissingRating() {
+        Book existing = book(3, USER_A, "Dune", "111");
+        existing.setListType(ListType.READING_LIST);
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.READING_LIST))
+                .thenReturn(Optional.of(existing));
+        when(bookRepository.save(existing)).thenReturn(existing);
+
+        assertNull(service.moveToCollection(USER_A, 3, null).getRating());
+        assertEquals(ListType.COLLECTION, existing.getListType());
+    }
+
+    @Test
+    void moveToCollectionFailsWhenBookNotOnUsersReadingList() {
+        // Covers another user's book and a book already in the collection.
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.READING_LIST))
+                .thenReturn(Optional.empty());
+
+        assertThrows(BookNotFoundException.class, () -> service.moveToCollection(USER_A, 3, 5));
+
+        verify(bookRepository, never()).save(any());
+    }
+
+    @Test
+    void removeAndUndoOnReadingListAreScopedToThatList() {
+        fixClockAtNow();
+        Book existing = book(3, USER_A, "Dune", "111");
+        existing.setListType(ListType.READING_LIST);
+        when(bookRepository.findByIdAndUserIdAndListType(3, USER_A, ListType.READING_LIST))
+                .thenReturn(Optional.of(existing));
+
+        service.removeBook(USER_A, 3, ListType.READING_LIST);
+        assertEquals(NOW.plusSeconds(5), existing.getDeletionScheduledAt());
+
+        when(bookRepository.findPendingDeletion(3, USER_A, ListType.READING_LIST))
+                .thenReturn(Optional.of(existing));
+        when(bookRepository.existsByUserIdAndIsbn(USER_A, "111")).thenReturn(false);
+        when(bookRepository.save(existing)).thenReturn(existing);
+
+        service.undoRemoval(USER_A, 3, ListType.READING_LIST);
+        assertNull(existing.getDeletionScheduledAt());
     }
 
     // ---- purgeExpiredRemovals ----

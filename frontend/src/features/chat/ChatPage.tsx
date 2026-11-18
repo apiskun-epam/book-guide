@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { streamBookSuggestions, BookCandidate, addBookToCollection } from '../../api/client';
+import { streamBookSuggestions, BookCandidate, addBookToReadingList } from '../../api/client';
 import { ChatMessage } from './ChatMessage';
 import { BookSuggestionCard } from './BookSuggestionCard';
 import { SendIcon } from '../../components/icons';
@@ -75,10 +75,10 @@ const ChatPage: React.FC = () => {
 
   const bookKey = (book: BookCandidate) => book.isbn || `${book.title}|${book.author}`;
 
-  const handleAddToCollection = async (book: BookCandidate) => {
+  const handleAddToReadingList = async (book: BookCandidate) => {
     const key = bookKey(book);
     try {
-      await addBookToCollection({
+      await addBookToReadingList({
         title: book.title,
         author: book.author,
         isbn: book.isbn || undefined,
@@ -86,9 +86,9 @@ const ChatPage: React.FC = () => {
         description: book.description,
       });
       setBookStatus((prev) => ({ ...prev, [key]: 'added' }));
-      showToast(`"${book.title}" added to your collection!`);
+      showToast(`"${book.title}" added to your reading list!`);
     } catch (err) {
-      showToast('Failed to add book. It may already be in your collection.', { variant: 'error' });
+      showToast('Failed to add book. It may already be in your lists.', { variant: 'error' });
       console.error('Error adding book:', err);
     }
   };
@@ -145,7 +145,7 @@ const ChatPage: React.FC = () => {
                         key={`${bookKey(book)}-${index}`}
                         book={book}
                         added={bookStatus[bookKey(book)] === 'added'}
-                        onAddToCollection={handleAddToCollection}
+                        onAddToReadingList={handleAddToReadingList}
                       />
                     ))}
                   </div>

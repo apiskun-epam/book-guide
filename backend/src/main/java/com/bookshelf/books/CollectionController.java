@@ -18,7 +18,7 @@ public class CollectionController {
 
     @GetMapping
     public ResponseEntity<List<BookDTO>> getCollection(@AuthenticationPrincipal AuthenticatedUser user) {
-        List<BookDTO> collection = collectionService.getUserCollection(user.uid());
+        List<BookDTO> collection = collectionService.getBooks(user.uid(), ListType.COLLECTION);
         return ResponseEntity.ok(collection);
     }
 
@@ -26,7 +26,7 @@ public class CollectionController {
     public ResponseEntity<BookDTO> addBook(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody AddBookRequest request) {
-        BookDTO book = collectionService.addBookToCollection(user.uid(), request);
+        BookDTO book = collectionService.addBook(user.uid(), request, ListType.COLLECTION);
         return ResponseEntity.ok(book);
     }
 
@@ -43,7 +43,7 @@ public class CollectionController {
     public ResponseEntity<Void> removeBook(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable Integer bookId) {
-        collectionService.removeBookFromCollection(user.uid(), bookId);
+        collectionService.removeBook(user.uid(), bookId, ListType.COLLECTION);
         return ResponseEntity.noContent().build();
     }
 
@@ -51,6 +51,6 @@ public class CollectionController {
     public ResponseEntity<BookDTO> undoRemoval(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable Integer bookId) {
-        return ResponseEntity.ok(collectionService.undoRemoval(user.uid(), bookId));
+        return ResponseEntity.ok(collectionService.undoRemoval(user.uid(), bookId, ListType.COLLECTION));
     }
 }
