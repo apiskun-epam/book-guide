@@ -4,13 +4,13 @@ import './BookSuggestionCard.css';
 
 interface BookSuggestionCardProps {
   book: BookCandidate;
-  onAddToCollection?: (book: BookCandidate) => void;
+  onAddToReadingList?: (book: BookCandidate) => void;
   added?: boolean;
 }
 
 export const BookSuggestionCard: React.FC<BookSuggestionCardProps> = ({ 
   book, 
-  onAddToCollection,
+  onAddToReadingList,
   added,
 }) => {
   return (
@@ -34,15 +34,15 @@ export const BookSuggestionCard: React.FC<BookSuggestionCardProps> = ({
         )}
       </div>
       
-      {onAddToCollection && (
+      {onAddToReadingList && (
         <div className="book-suggestion-card__footer">
           <button
             className="book-suggestion-card__add-btn"
-            onClick={() => onAddToCollection(book)}
+            onClick={() => onAddToReadingList(book)}
             disabled={added}
-            aria-label={`Add ${book.title} to collection`}
+            aria-label={`Add ${book.title} to reading list`}
           >
-            {added ? 'Added ✓' : 'Add to Collection'}
+            {added ? 'Added ✓' : 'Add to Reading List'}
           </button>
         </div>
       )}

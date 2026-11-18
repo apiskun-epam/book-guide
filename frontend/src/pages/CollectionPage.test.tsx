@@ -1,4 +1,6 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CollectionPage from './CollectionPage';
 import { ToastProvider } from '../components/ToastProvider';
@@ -8,6 +10,7 @@ vi.mock('../api/client');
 
 const dune: api.Book = {
   id: 1,
+  listType: 'COLLECTION',
   title: 'Dune',
   author: 'Frank Herbert',
   isbn: '111',
@@ -22,7 +25,13 @@ const dune: api.Book = {
 const EMPTY_TEXT =
   'No books in your collection just yet. Ready to find your next read? Use search bar, or a suggestion bot to get started';
 
-const setup = () => render(<CollectionPage />, { wrapper: ToastProvider });
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+  <MemoryRouter>
+    <ToastProvider>{children}</ToastProvider>
+  </MemoryRouter>
+);
+
+const setup = () => render(<CollectionPage />, { wrapper: Wrapper });
 
 describe('CollectionPage', () => {
   beforeEach(() => {

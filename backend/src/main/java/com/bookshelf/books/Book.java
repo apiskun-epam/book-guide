@@ -47,6 +47,11 @@ public class Book {
     @Max(5)
     private Integer rating;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "list_type", nullable = false)
+    @Builder.Default
+    private ListType listType = ListType.COLLECTION;
+
     @Column(name = "added_at", nullable = false, updatable = false)
     private LocalDateTime addedAt;
 

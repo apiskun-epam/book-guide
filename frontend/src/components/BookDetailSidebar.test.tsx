@@ -5,6 +5,7 @@ import { Book } from '../api/client';
 
 const make = (id: number, over: Partial<Book> = {}): Book => ({
   id,
+  listType: 'COLLECTION',
   title: `Book ${id}`,
   author: 'Andrzej Sapkowski',
   isbn: '123',

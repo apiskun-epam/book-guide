@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project overview
 
-BookShelf AI is a book management app. Users sign in with Google, search for books, and keep two lists: **Reading List** and **Already Read**. A chat feature uses a multi-agent workflow, backed by the Claude API, to recommend a book that is not already in either list.
+BookShelf AI is a book management app. Users sign in with Google, search for books, and keep two lists: **Reading List** (books to read, unrated) and **Collection** (books already read, rated). Both live in the `collection` table, split by `list_type`; a book can be in only one list. A chat feature uses a multi-agent workflow, backed by the Claude API, to recommend a book that is not already in either list.
 
 Scope: this is a **local proof of concept**. Do not add cloud hosting, deployment pipelines, or infrastructure-as-code unless explicitly asked.
 
@@ -63,7 +63,7 @@ Before reporting a task as done, run the tests and type check for the part you c
 
 1. **Identity comes from the verified session cookie only.** Sign-in: the SPA sends the Firebase ID token once to `POST /api/auth/session`; the backend verifies it (Google provider only, recent sign-in) and sets a Firebase session cookie (`bookshelf_session`, HttpOnly, SameSite=Strict, Path=/api, 7 days, `Secure` via `app.auth.cookie-secure`). Every endpoint except `POST /api/auth/session` and `POST /api/auth/logout` requires that cookie, verified with revocation checking. Take the user ID from the verified principal (`@AuthenticationPrincipal AuthenticatedUser`). Never accept a user ID from the request body, path, or query string. Logout revokes the user's refresh tokens so the cookie stops working immediately. The frontend uses relative `/api` URLs (Vite proxy) so the cookie stays same-origin and never stores tokens in browser storage. All state-changing requests must send `X-Requested-With: bookshelf` (CSRF defence); the shared `apiFetch` in `src/api/client.ts` does this.
 2. **Users are keyed by Firebase UID.** Each collection row references `user_id` (the Firebase UID). Every query on user data must filter by the authenticated user's UID. Add a test for this whenever a new user-data endpoint is added.
-3. **The model never enforces list exclusion.** Books already in a user's lists are removed by a deterministic guard step in Java, after the candidate agent runs and before the response agent. Do not rely on prompt instructions for this. Normalize titles and ISBNs before comparing.
+3. **The model never enforces list exclusion.** Books already in either of a user's lists are removed by `ExclusionGuard`, a deterministic guard step in Java, after the candidate agent runs and before the response agent. Do not rely on prompt instructions for this. Normalize titles and ISBNs before comparing.
 4. **Agents are a plain Spring orchestration.** The pipeline is intake, preference, candidate, guard, response. Each agent call uses a strict JSON schema for its output, a timeout, and one retry. Keep agent prompts in resource files, not inline strings.
 5. **Claude calls happen only on the backend.** The frontend never calls the Anthropic API directly.
 6. **Sensitive fields are encrypted at rest.** Use AES-256-GCM with a fresh random 12-byte IV per value. The key comes from configuration outside the database. Do not invent a custom crypto scheme.

@@ -2,16 +2,39 @@ import React, { useEffect, useState } from 'react';
 import { BookSearchResult } from '../api/client';
 import './BookDetailModal.css';
 
+export type AddTarget = 'READING_LIST' | 'COLLECTION';
+
 interface BookDetailModalProps {
   book: BookSearchResult;
   onClose: () => void;
-  onAdd: (book: BookSearchResult, rating: number) => void;
+  onAdd: (book: BookSearchResult, target: AddTarget, rating: number) => void;
+  /**
+   * 'search' lets the user choose a list; 'move' (opened from the reading list) can only
+   * add to the collection.
+   */
+  mode?: 'search' | 'move';
 }
 
 const CLAMP_THRESHOLD = 400;
 
-const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose, onAdd }) => {
+const TARGET_OPTIONS: { value: AddTarget; title: string; hint: string; ariaLabel: string }[] = [
+  {
+    value: 'READING_LIST',
+    title: 'Reading list',
+    hint: 'Books you plan to read',
+    ariaLabel: 'Add to Reading list',
+  },
+  {
+    value: 'COLLECTION',
+    title: 'My Collection',
+    hint: "Books you've read, with a rating",
+    ariaLabel: 'Add to my Collection',
+  },
+];
+
+const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose, onAdd, mode = 'search' }) => {
   const [rating, setRating] = useState(0);
+  const [target, setTarget] = useState<AddTarget>(mode === 'move' ? 'COLLECTION' : 'READING_LIST');
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -86,24 +109,53 @@ const BookDetailModal: React.FC<BookDetailModalProps> = ({ book, onClose, onAdd 
             </section>
 
             <div className="rating-section">
-              <label>Your rating</label>
-              <div className="star-rating">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    className={`star ${star <= rating ? 'filled' : ''}`}
-                    onClick={() => setRating(star)}
-                    aria-label={`Rate ${star} out of 5`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
+              {mode === 'search' && (
+                <fieldset className="target-options">
+                  <legend className="visually-hidden">Add to</legend>
+                  {TARGET_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className={`target-card ${target === option.value ? 'selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="add-target"
+                        value={option.value}
+                        aria-label={option.ariaLabel}
+                        checked={target === option.value}
+                        onChange={() => setTarget(option.value)}
+                      />
+                      <span className="target-dot" aria-hidden="true" />
+                      <span className="target-text">
+                        <span className="target-title">{option.title}</span>
+                        <span className="target-hint">{option.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+              {target === 'COLLECTION' && (
+                <>
+                  <span className="rating-label">Your rating (optional)</span>
+                  <div className="star-rating">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        className={`star ${star <= rating ? 'filled' : ''}`}
+                        onClick={() => setRating(star)}
+                        aria-label={`Rate ${star} out of 5`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
               <button
                 className="add-button"
-                onClick={() => onAdd(book, rating)}
+                onClick={() => onAdd(book, target, target === 'COLLECTION' ? rating : 0)}
               >
-                Add to collection
+                {target === 'COLLECTION' ? 'Add to my Collection' : 'Add to Reading list'}
               </button>
             </div>
           </div>
