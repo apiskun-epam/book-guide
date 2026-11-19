@@ -45,6 +45,7 @@ jobs:
             6. Always finish with exactly one `gh pr comment`, also without findings:
                a `## Code review` heading, one sentence per finding or "No findings.",
                and one line on what you checked.
+            7. Check both the backend and the frontend code for issues, never skip either of the modules.
           claude_args: |
             --model sonnet
             --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
