@@ -78,8 +78,11 @@ public class BookSuggestionOrchestrator {
     /**
      * Streaming variant of {@link #generateSuggestions}: reports the intro message once the
      * request is analysed, then each recommendation as the candidate agent produces it.
+     * Books in {@code alreadySuggested} (earlier turns of this conversation) are told to the model
+     * and also dropped by the guard, as are repeats within this reply.
      */
-    public void streamSuggestions(String userId, String userPrompt, SuggestionListener listener) {
+    public void streamSuggestions(String userId, String userPrompt, List<BookRef> alreadySuggested,
+                                  SuggestionListener listener) {
         log.info("Starting streaming book suggestion workflow for user: {}", userId);
 
         try {
@@ -88,11 +91,11 @@ public class BookSuggestionOrchestrator {
             List<Book> allBooks = bookRepository.findByUserId(userId);
             List<Book> readBooks = readBooks(allBooks);
             PreferenceResult preferenceResult = preferenceAgent.analyze(readBooks);
-            Predicate<BookCandidate> allowed = exclusionGuard.allowedAgainst(allBooks);
+            Predicate<BookCandidate> allowed = exclusionGuard.newSuggestionFilter(allBooks, alreadySuggested);
 
             listener.onMessage(buildResponseMessage(intakeResult, readBooks.size()));
 
-            candidateAgent.streamCandidates(intakeResult, preferenceResult, candidate -> {
+            candidateAgent.streamCandidates(intakeResult, preferenceResult, alreadySuggested, candidate -> {
                 if (!allowed.test(candidate)) {
                     return;
                 }

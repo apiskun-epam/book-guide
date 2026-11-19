@@ -19,14 +19,21 @@ public class ExclusionGuard {
 
     /** Returns a predicate that is true for candidates NOT already owned by the user. */
     public Predicate<BookCandidate> allowedAgainst(List<Book> ownedBooks) {
+        return allowedAgainst(ownedBooks, List.of());
+    }
+
+    /**
+     * Like {@link #allowedAgainst(List)}, but also rejects books already proposed earlier in the
+     * current conversation, so follow-up requests never repeat a recommendation.
+     */
+    public Predicate<BookCandidate> allowedAgainst(List<Book> ownedBooks, List<BookRef> alreadySuggested) {
         Set<String> isbns = new HashSet<>();
         Set<String> titleAuthors = new HashSet<>();
         for (Book book : ownedBooks) {
-            String isbn = normalizeIsbn(book.getIsbn());
-            if (!isbn.isEmpty()) {
-                isbns.add(isbn);
-            }
-            titleAuthors.add(titleAuthorKey(book.getTitle(), book.getAuthor()));
+            register(isbns, titleAuthors, book.getIsbn(), book.getTitle(), book.getAuthor());
+        }
+        for (BookRef ref : alreadySuggested == null ? List.<BookRef>of() : alreadySuggested) {
+            register(isbns, titleAuthors, ref.getIsbn(), ref.getTitle(), ref.getAuthor());
         }
 
         return candidate -> {
@@ -36,6 +43,39 @@ public class ExclusionGuard {
             }
             return !titleAuthors.contains(titleAuthorKey(candidate.getTitle(), candidate.getAuthor()));
         };
+    }
+
+    /**
+     * Filter for one streamed reply: rejects owned books and books proposed earlier in the
+     * conversation, and remembers every book it accepts so the same reply never repeats one either.
+     * Not thread-safe; use one instance per request.
+     */
+    public Predicate<BookCandidate> newSuggestionFilter(List<Book> ownedBooks, List<BookRef> alreadySuggested) {
+        Predicate<BookCandidate> notOwnedOrProposed = allowedAgainst(ownedBooks, alreadySuggested);
+        Set<String> acceptedIsbns = new HashSet<>();
+        Set<String> acceptedTitleAuthors = new HashSet<>();
+
+        return candidate -> {
+            if (!notOwnedOrProposed.test(candidate)) {
+                return false;
+            }
+            String isbn = normalizeIsbn(candidate.getIsbn());
+            String key = titleAuthorKey(candidate.getTitle(), candidate.getAuthor());
+            if ((!isbn.isEmpty() && acceptedIsbns.contains(isbn)) || acceptedTitleAuthors.contains(key)) {
+                return false;
+            }
+            register(acceptedIsbns, acceptedTitleAuthors, candidate.getIsbn(), candidate.getTitle(), candidate.getAuthor());
+            return true;
+        };
+    }
+
+    private static void register(Set<String> isbns, Set<String> titleAuthors,
+                                 String isbn, String title, String author) {
+        String normalized = normalizeIsbn(isbn);
+        if (!normalized.isEmpty()) {
+            isbns.add(normalized);
+        }
+        titleAuthors.add(titleAuthorKey(title, author));
     }
 
     public List<BookCandidate> filter(List<BookCandidate> candidates, List<Book> ownedBooks) {
