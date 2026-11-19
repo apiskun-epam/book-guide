@@ -1,5 +1,6 @@
 package com.bookshelf.books;
 
+import com.bookshelf.config.CatalogProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +26,9 @@ public class BookSearchService {
 
     private static final String OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
     private static final String OPEN_LIBRARY_WORK_URL = "https://openlibrary.org/works/";
-    private static final String SEARCH_FIELDS = "key,title,author_name,isbn,cover_i,first_publish_year,description";
+    private static final String SEARCH_FIELDS = "key,title,author_name,isbn,cover_i,first_publish_year,description,editions";
+    private static final String OPEN_LIBRARY_EDITION_URL = "https://openlibrary.org";
+    private static final Pattern EDITION_KEY_PATTERN = Pattern.compile("^/books/OL\\d+M$");
     private static final Pattern WORK_KEY_PATTERN = Pattern.compile("^/works/(OL\\d+W)$");
 
     // JSON field keys
@@ -35,13 +38,17 @@ public class BookSearchService {
     private static final String FIELD_COVER_I = "cover_i";
     private static final String FIELD_FIRST_PUBLISH_YEAR = "first_publish_year";
     private static final String FIELD_DESCRIPTION = "description";
+    private static final String FIELD_EDITIONS = "editions";
 
     private final RestTemplate restTemplate;
+    private final CatalogProperties catalogProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public List<BookSearchResult> searchBooks(String query) {
         try {
-            String url = OPEN_LIBRARY_SEARCH_URL + "?q=" + query + "&limit=10&fields=" + SEARCH_FIELDS;
+            // Open Library falls back to the caller's language when lang is omitted, so always pass it explicitly.
+            String url = OPEN_LIBRARY_SEARCH_URL + "?q=" + query + "&limit=10&fields=" + SEARCH_FIELDS
+                    + "&lang=" + catalogProperties.language();
             String response = restTemplate.getForObject(url, String.class);
 
             JsonNode root = objectMapper.readTree(response);
@@ -53,8 +60,12 @@ public class BookSearchService {
                 for (JsonNode doc : docs) {
                     BookSearchResult result = new BookSearchResult();
 
-                    // Title
-                    if (doc.has(FIELD_TITLE)) {
+                    // Title: prefer the best-matching edition for the configured language (Open Library ranks
+                    // editions by language), falling back to the work title.
+                    String editionTitle = bestEditionTitle(doc);
+                    if (editionTitle != null) {
+                        result.setTitle(editionTitle);
+                    } else if (doc.has(FIELD_TITLE)) {
                         result.setTitle(doc.get(FIELD_TITLE).asText());
                     }
 
@@ -79,10 +90,9 @@ public class BookSearchService {
                         result.setPublishYear(doc.get(FIELD_FIRST_PUBLISH_YEAR).asInt());
                     }
 
-                    // Description
-                    if (doc.has(FIELD_DESCRIPTION)) {
-                        result.setDescription(doc.get(FIELD_DESCRIPTION).asText());
-                    }
+                    // Description: English only. Work descriptions are not language-tagged, so fall back to the
+                    // best edition's description when the work's is in another language; otherwise leave it empty.
+                    result.setDescription(englishDescription(doc));
 
                     if (result.getTitle() != null) {
                         results.add(result);
@@ -94,6 +104,52 @@ public class BookSearchService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to search books", e);
         }
+    }
+
+    private String englishDescription(JsonNode doc) {
+        String workDescription = descriptionText(doc.get(FIELD_DESCRIPTION));
+        if (EnglishText.looksEnglish(workDescription)) {
+            return workDescription;
+        }
+        return fetchEditionDescription(doc);
+    }
+
+    /** Best-effort: the top-ranked (for {@code lang}) edition's own description, if English. Never throws. */
+    private String fetchEditionDescription(JsonNode doc) {
+        JsonNode first = doc.path(FIELD_EDITIONS).path("docs").path(0);
+        String key = first.path("key").asText("");
+        if (!EDITION_KEY_PATTERN.matcher(key).matches()) {
+            return null;
+        }
+        try {
+            String response = restTemplate.getForObject(OPEN_LIBRARY_EDITION_URL + key + ".json", String.class);
+            if (response == null) {
+                return null;
+            }
+            String description = descriptionText(objectMapper.readTree(response).get(FIELD_DESCRIPTION));
+            return EnglishText.looksEnglish(description) ? description : null;
+        } catch (Exception e) {
+            log.warn("Edition description lookup failed for '{}'", key, e);
+            return null;
+        }
+    }
+
+    /** Open Library descriptions are either a plain string or an object like {"type": "...", "value": "..."}. */
+    private static String descriptionText(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String text = node.isObject() ? node.path("value").asText("") : node.asText("");
+        return text.isBlank() ? null : text;
+    }
+
+    private static String bestEditionTitle(JsonNode doc) {
+        JsonNode editions = doc.path(FIELD_EDITIONS).path("docs");
+        if (editions.isArray() && !editions.isEmpty() && editions.get(0).hasNonNull(FIELD_TITLE)) {
+            String title = editions.get(0).get(FIELD_TITLE).asText();
+            return title.isBlank() ? null : title;
+        }
+        return null;
     }
 
     /**

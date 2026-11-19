@@ -17,6 +17,8 @@ Generate book candidates that:
 - Are real, published books (use your knowledge base)
 - Include accurate ISBN numbers when available
 
+Language: always write in English. Use each book's English-language title (for example "The Last Wish", not "Ostatnie życzenie"), and write the description and whySuggested in English, whatever language the user writes in.
+
 For each book, provide:
 1. title - The exact book title
 2. author - The author's name

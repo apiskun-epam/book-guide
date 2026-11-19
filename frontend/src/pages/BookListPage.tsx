@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   getCollection,
@@ -57,7 +57,7 @@ const BookListPage: React.FC<{ variant: ListVariant }> = ({ variant }) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selectedBook = books.find((b) => b.id === selectedId) ?? null;
 
-  const fetchCollection = async () => {
+  const fetchCollection = useCallback(async () => {
     try {
       setLoading(true);
       const collection = await config.fetch();
@@ -69,12 +69,13 @@ const BookListPage: React.FC<{ variant: ListVariant }> = ({ variant }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [config]);
 
-  // Reload on mount and whenever a book is added from the top bar search.
+  // Reload on mount and whenever a book is added from the top bar search or the variant changes
+  // (`config` is derived from `variant`, so fetchCollection changes only then).
   useEffect(() => {
     fetchCollection();
-  }, [refreshVersion, variant]);
+  }, [refreshVersion, fetchCollection]);
 
   const handleRatingChange = async (bookId: number, newRating: number) => {
     try {

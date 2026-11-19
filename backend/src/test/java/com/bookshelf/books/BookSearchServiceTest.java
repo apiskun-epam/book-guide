@@ -1,10 +1,12 @@
 package com.bookshelf.books;
 
+import com.bookshelf.config.CatalogProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -23,6 +25,9 @@ class BookSearchServiceTest {
 
     @Mock
     private RestTemplate restTemplate;
+
+    @Spy
+    private CatalogProperties catalogProperties = new CatalogProperties("en");
 
     @InjectMocks
     private BookSearchService service;
@@ -120,6 +125,106 @@ class BookSearchServiceTest {
         assertTrue(url.getValue().startsWith("https://openlibrary.org/search.json?q=foundation"));
         assertTrue(url.getValue().contains("&limit=10"));
         assertTrue(url.getValue().contains("fields="));
+    }
+
+    @Test
+    void alwaysRequestsEnglishRegardlessOfCaller() {
+        stubResponse("{\"docs\":[]}");
+
+        service.searchBooks("last wish");
+
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        verify(restTemplate).getForObject(url.capture(), eq(String.class));
+        assertTrue(url.getValue().contains("&lang=en"));
+        assertTrue(url.getValue().contains("editions"));
+    }
+
+    @Test
+    void prefersBestEditionTitleOverWorkTitle() {
+        stubResponse("""
+                {"docs":[{"title":"Ostatnie Życzenie","editions":{"docs":[{"title":"The Last Wish"}]}}]}
+                """);
+
+        assertEquals("The Last Wish", service.searchBooks("last wish").get(0).getTitle());
+    }
+
+    @Test
+    void fallsBackToWorkTitleWhenNoUsableEdition() {
+        stubResponse("""
+                {"docs":[{"title":"Work Title","editions":{"docs":[]}},
+                         {"title":"Other","editions":{"docs":[{"title":" "}]}}]}
+                """);
+
+        List<String> titles = service.searchBooks("x").stream().map(BookSearchResult::getTitle).toList();
+
+        assertEquals(List.of("Work Title", "Other"), titles);
+    }
+
+    private static final String POLISH = "Pozycja, która przedstawia początki historii słynnego Geralta z Rivii. "
+            + "Sięgnij po tę lekturę i zanurz się w świecie, pełnym niebezpiecznych stworzeń.";
+
+    @Test
+    void keepsEnglishWorkDescriptionWithoutExtraCalls() {
+        stubResponse("{\"docs\":[{\"title\":\"T\",\"description\":\"Geralt is a witcher who hunts the monsters of the land.\"}]}");
+
+        assertEquals("Geralt is a witcher who hunts the monsters of the land.",
+                service.searchBooks("t").get(0).getDescription());
+        verify(restTemplate).getForObject(anyString(), eq(String.class));
+    }
+
+    @Test
+    void usesEnglishEditionDescriptionWhenWorkDescriptionIsPolish() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(
+                "{\"docs\":[{\"title\":\"Ostatnie życzenie\",\"description\":\"" + POLISH + "\","
+                        + "\"editions\":{\"docs\":[{\"key\":\"/books/OL1M\",\"title\":\"The Last Wish\"}]}}]}",
+                "{\"description\":{\"type\":\"/type/text\",\"value\":\"Geralt of Rivia is a witcher, and he hunts the monsters.\"}}");
+
+        BookSearchResult r = service.searchBooks("last wish").get(0);
+
+        assertEquals("The Last Wish", r.getTitle());
+        assertEquals("Geralt of Rivia is a witcher, and he hunts the monsters.", r.getDescription());
+        verify(restTemplate).getForObject(eq("https://openlibrary.org/books/OL1M.json"), eq(String.class));
+    }
+
+    @Test
+    void leavesDescriptionEmptyWhenNothingEnglishIsAvailable() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(
+                "{\"docs\":[{\"title\":\"T\",\"description\":\"" + POLISH + "\","
+                        + "\"editions\":{\"docs\":[{\"key\":\"/books/OL1M\"}]}}]}",
+                "{\"description\":\"" + POLISH + "\"}");
+
+        assertNull(service.searchBooks("t").get(0).getDescription());
+    }
+
+    @Test
+    void leavesDescriptionEmptyWhenEditionLookupFailsOrKeyIsInvalid() {
+        when(restTemplate.getForObject(anyString(), eq(String.class)))
+                .thenReturn("{\"docs\":[{\"title\":\"A\",\"description\":\"" + POLISH + "\","
+                        + "\"editions\":{\"docs\":[{\"key\":\"/books/OL1M\"}]}},"
+                        + "{\"title\":\"B\",\"description\":\"" + POLISH + "\","
+                        + "\"editions\":{\"docs\":[{\"key\":\"../evil\"}]}}]}")
+                .thenThrow(new RestClientException("boom"));
+
+        List<BookSearchResult> results = service.searchBooks("x");
+
+        assertNull(results.get(0).getDescription());
+        assertNull(results.get(1).getDescription());
+    }
+
+    @Test
+    void englishTextHeuristic() {
+        assertTrue(EnglishText.looksEnglish("A witcher who hunts the monsters of the land."));
+        assertTrue(EnglishText.looksEnglish("Short blurb"));
+        assertFalse(EnglishText.looksEnglish(POLISH));
+        assertFalse(EnglishText.looksEnglish(" "));
+        assertFalse(EnglishText.looksEnglish(null));
+    }
+
+    @Test
+    void catalogPropertiesDefaultToEnglishWhenBlank() {
+        assertEquals("en", new CatalogProperties(null).language());
+        assertEquals("en", new CatalogProperties(" ").language());
+        assertEquals("pl", new CatalogProperties("pl").language());
     }
 
     @Test

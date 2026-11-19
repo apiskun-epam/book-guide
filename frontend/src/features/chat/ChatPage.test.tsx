@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPage from './ChatPage';
 import { ToastProvider } from '../../components/ToastProvider';
@@ -22,12 +22,16 @@ const sentWith = (call: number) => vi.mocked(api.streamBookSuggestions).mock.cal
 
 const Wrapper = ({ children }: { children: React.ReactNode }) => <ToastProvider>{children}</ToastProvider>;
 
+const DONE_STATUS = /That's everything|No new recommendations/;
+
 const ask = async (prompt: string) => {
+  const doneBefore = screen.queryAllByText(DONE_STATUS).length;
   fireEvent.change(screen.getByPlaceholderText('What kind of book are you looking for?'), {
     target: { value: prompt },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
-  await screen.findByText(/That's everything|No new recommendations/);
+  // Status lines from earlier turns stay on screen, so wait for a new one instead of matching any.
+  await waitFor(() => expect(screen.queryAllByText(DONE_STATUS).length).toBeGreaterThan(doneBefore));
 };
 
 describe('ChatPage', () => {

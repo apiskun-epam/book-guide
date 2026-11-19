@@ -1,5 +1,6 @@
 package com.bookshelf.config;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -9,6 +10,7 @@ import org.springframework.web.client.RestTemplate;
  * Shared {@link RestTemplate} for outbound catalog calls, with connect and read timeouts.
  */
 @Configuration
+@EnableConfigurationProperties(CatalogProperties.class)
 public class HttpClientConfig {
 
     @Bean
