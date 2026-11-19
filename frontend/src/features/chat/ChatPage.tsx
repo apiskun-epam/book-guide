@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { streamBookSuggestions, BookCandidate, BookRef, addBookToReadingList } from '../../api/client';
+import { streamBookSuggestions, BookCandidate, BookRef, SuggestionMode, addBookToReadingList } from '../../api/client';
 import { ChatMessage } from './ChatMessage';
 import { BookSuggestionCard } from './BookSuggestionCard';
 import { SendIcon } from '../../components/icons';
@@ -11,6 +11,8 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   suggestions?: BookCandidate[];
+  /** Which mode this reply was requested in (assistant messages only). */
+  mode?: SuggestionMode;
   /** True once the server has finished streaming this reply. */
   done?: boolean;
 }
@@ -25,7 +27,33 @@ const collectAlreadySuggested = (messages: Message[]): BookRef[] =>
     .map(({ title, author, isbn }) => (isbn ? { title, author, isbn } : { title, author }))
     .slice(-MAX_ALREADY_SUGGESTED);
 
+const MODE_COPY: Record<SuggestionMode, { label: string; placeholder: string; welcome: string; examples: string[] }> = {
+  DISCOVER: {
+    label: 'Find something new',
+    placeholder: 'What kind of book are you looking for?',
+    welcome:
+      "Tell me what you're in the mood to read, and I'll suggest personalized book recommendations based on your collection and preferences.",
+    examples: [
+      'I want something light and fun to read',
+      'Recommend me a thriller that will keep me up at night',
+      "I'm looking for a thought-provoking non-fiction book",
+    ],
+  },
+  BACKLOG: {
+    label: 'From my Reading List',
+    placeholder: 'What are you in the mood for tonight?',
+    welcome:
+      "Can't decide what to read next? Tell me your mood or how much time you have, and I'll pick the best fit from the books already on your Reading List.",
+    examples: [
+      'Something short I can finish this weekend',
+      "I'm in the mood for something light and funny",
+      'A gripping page-turner for a long flight',
+    ],
+  },
+};
+
 const ChatPage: React.FC = () => {
+  const [mode, setMode] = useState<SuggestionMode>('DISCOVER');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -54,7 +82,8 @@ const ChatPage: React.FC = () => {
       content: input.trim(),
     };
 
-    const alreadySuggested = collectAlreadySuggested(messages);
+    const requestMode = mode;
+    const alreadySuggested = requestMode === 'DISCOVER' ? collectAlreadySuggested(messages) : [];
 
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
@@ -67,7 +96,7 @@ const ChatPage: React.FC = () => {
       setMessages((prev) => {
         const exists = prev.some((m) => m.id === assistantId);
         if (!exists) {
-          return [...prev, update({ id: assistantId, role: 'assistant', content: '', suggestions: [] })];
+          return [...prev, update({ id: assistantId, role: 'assistant', content: '', suggestions: [], mode: requestMode })];
         }
         return prev.map((m) => (m.id === assistantId ? update(m) : m));
       });
@@ -76,6 +105,7 @@ const ChatPage: React.FC = () => {
     try {
       await streamBookSuggestions(userMessage.content, {
         alreadySuggested,
+        mode: requestMode,
         onMessage: (content) => upsertAssistant((m) => ({ ...m, content })),
         onSuggestion: (book) =>
           upsertAssistant((m) => ({ ...m, suggestions: [...(m.suggestions ?? []), book] })),
@@ -87,6 +117,18 @@ const ChatPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const doneStatus = (message: Message): string => {
+    const count = message.suggestions?.length ?? 0;
+    if (message.mode === 'BACKLOG') {
+      return count > 0
+        ? `That's my ${count === 1 ? 'pick' : 'picks'} from your Reading List. Tell me a different mood or time for another round.`
+        : 'No picks this time.';
+    }
+    return count > 0
+      ? `That's everything — ${count} ${count === 1 ? 'recommendation' : 'recommendations'} in total. Ask for more or refine your request anytime.`
+      : 'No new recommendations this time. Try rephrasing or broadening your request.';
   };
 
   const bookKey = (book: BookCandidate) => book.isbn || `${book.title}|${book.author}`;
@@ -123,29 +165,18 @@ const ChatPage: React.FC = () => {
           {messages.length === 0 && (
             <div className="chat-page__welcome">
               <h2 className="chat-page__welcome-title">Find Your Next Book</h2>
-              <p className="chat-page__welcome-text">
-                Tell me what you're in the mood to read, and I'll suggest personalized book recommendations based on your collection and preferences.
-              </p>
+              <p className="chat-page__welcome-text">{MODE_COPY[mode].welcome}</p>
               <div className="chat-page__examples">
                 <p className="chat-page__examples-title">Try asking:</p>
-                <button 
-                  className="chat-page__example-btn"
-                  onClick={() => setInput("I want something light and fun to read")}
-                >
-                  "I want something light and fun to read"
-                </button>
-                <button 
-                  className="chat-page__example-btn"
-                  onClick={() => setInput("Recommend me a thriller that will keep me up at night")}
-                >
-                  "Recommend me a thriller that will keep me up at night"
-                </button>
-                <button 
-                  className="chat-page__example-btn"
-                  onClick={() => setInput("I'm looking for a thought-provoking non-fiction book")}
-                >
-                  "I'm looking for a thought-provoking non-fiction book"
-                </button>
+                {MODE_COPY[mode].examples.map((example) => (
+                  <button
+                    key={example}
+                    className="chat-page__example-btn"
+                    onClick={() => setInput(example)}
+                  >
+                    "{example}"
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -161,7 +192,8 @@ const ChatPage: React.FC = () => {
                         key={`${bookKey(book)}-${index}`}
                         book={book}
                         added={bookStatus[bookKey(book)] === 'added'}
-                        onAddToReadingList={handleAddToReadingList}
+                        onAddToReadingList={message.mode === 'BACKLOG' ? undefined : handleAddToReadingList}
+                        whyLabel={message.mode === 'BACKLOG' ? 'Why now:' : undefined}
                       />
                     ))}
                   </div>
@@ -169,13 +201,13 @@ const ChatPage: React.FC = () => {
                 {message.role === 'assistant' && (
                   message.done ? (
                     <p className="chat-page__status chat-page__status--done" role="status">
-                      {message.suggestions && message.suggestions.length > 0
-                        ? `That's everything — ${message.suggestions.length} ${message.suggestions.length === 1 ? 'recommendation' : 'recommendations'} in total. Ask for more or refine your request anytime.`
-                        : 'No new recommendations this time. Try rephrasing or broadening your request.'}
+                      {doneStatus(message)}
                     </p>
                   ) : (
                     isLoading && message.id === messages[messages.length - 1]?.id && (
-                      <p className="chat-page__status" role="status">Finding more books…</p>
+                      <p className="chat-page__status" role="status">
+                        {message.mode === 'BACKLOG' ? 'Looking through your Reading List…' : 'Finding more books…'}
+                      </p>
                     )
                   )
                 )}
@@ -203,13 +235,27 @@ const ChatPage: React.FC = () => {
         </div>
 
         <div className="chat-page__input-container">
+          <div className="chat-page__modes" role="group" aria-label="Recommendation mode">
+            {(Object.keys(MODE_COPY) as SuggestionMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`chat-page__mode-btn${mode === m ? ' chat-page__mode-btn--active' : ''}`}
+                aria-pressed={mode === m}
+                disabled={isLoading}
+                onClick={() => setMode(m)}
+              >
+                {MODE_COPY[m].label}
+              </button>
+            ))}
+          </div>
           <form onSubmit={handleSubmit} className="chat-page__input-form">
             <textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="What kind of book are you looking for?"
+              placeholder={MODE_COPY[mode].placeholder}
               className="chat-page__input"
               rows={1}
               disabled={isLoading}

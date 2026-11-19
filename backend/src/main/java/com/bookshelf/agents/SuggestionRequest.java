@@ -13,6 +13,9 @@ public class SuggestionRequest {
     @NotBlank(message = "User prompt is required")
     private String prompt;
 
+    /** DISCOVER (default) recommends new books; BACKLOG ranks the user's own Reading List. */
+    private SuggestionMode mode = SuggestionMode.DISCOVER;
+
     /** Books already proposed earlier in this conversation; they are never proposed again. */
     @Valid
     @Size(max = 200)

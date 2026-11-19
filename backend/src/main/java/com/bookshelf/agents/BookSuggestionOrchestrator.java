@@ -22,6 +22,11 @@ public class BookSuggestionOrchestrator {
     private final BookRepository bookRepository;
     private final BookSearchService bookSearchService;
     private final ExclusionGuard exclusionGuard;
+    private final RankingAgent rankingAgent;
+    private final BacklogGuard backlogGuard;
+
+    /** Upper bound on Reading List books sent to the model in one request. */
+    static final int MAX_BACKLOG_BOOKS = 50;
 
     /**
      * Orchestrates the multi-agent workflow to generate book suggestions.
@@ -105,6 +110,47 @@ public class BookSuggestionOrchestrator {
         } catch (Exception e) {
             log.error("Error streaming book suggestions for user: {}", userId, e);
             throw new RuntimeException("Failed to generate book suggestions. Please try again.", e);
+        }
+    }
+
+    /**
+     * "Pick from my Reading List" mode: ranks books already on the user's Reading List for the
+     * current request. The backlog guard keeps only picks that really are on the list, and the
+     * book details come from the database. An empty list answers directly without calling Claude.
+     */
+    public void streamBacklogPicks(String userId, String userPrompt, SuggestionListener listener) {
+        log.info("Starting backlog pick workflow for user: {}", userId);
+
+        try {
+            List<Book> allBooks = bookRepository.findByUserId(userId);
+            List<Book> backlog = allBooks.stream()
+                    .filter(b -> b.getListType() == ListType.READING_LIST)
+                    .limit(MAX_BACKLOG_BOOKS)
+                    .toList();
+
+            if (backlog.isEmpty()) {
+                listener.onMessage("Your Reading List is empty. Add a few books to it first, "
+                        + "or switch to \"Find something new\" for fresh recommendations.");
+                return;
+            }
+
+            IntakeResult intakeResult = intakeAgent.analyze(userPrompt);
+            PreferenceResult preferenceResult = preferenceAgent.analyze(readBooks(allBooks));
+            RankingResult ranking = rankingAgent.rank(intakeResult, preferenceResult, backlog);
+            List<BookCandidate> picks = backlogGuard.resolve(ranking, backlog);
+
+            if (picks.isEmpty()) {
+                listener.onMessage("None of the books on your Reading List seem to fit this right now. "
+                        + "Try rephrasing, or switch to \"Find something new\".");
+                return;
+            }
+
+            listener.onMessage("Here " + (picks.size() == 1 ? "is the best pick" : "are my top picks")
+                    + " from your Reading List:");
+            picks.forEach(listener::onSuggestion);
+        } catch (Exception e) {
+            log.error("Error picking from reading list for user: {}", userId, e);
+            throw new RuntimeException("Failed to pick from your reading list. Please try again.", e);
         }
     }
 

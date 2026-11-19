@@ -29,4 +29,12 @@ describe('BookSuggestionCard', () => {
     expect(screen.getByRole('button', { name: 'Add Dune to reading list' })).toBeDisabled();
     expect(screen.getByText('Added ✓')).toBeInTheDocument();
   });
+
+  it('omits the genre chip and the add button for a Reading List pick', () => {
+    render(<BookSuggestionCard book={{ ...candidate, genre: null }} whyLabel="Why now:" />);
+
+    expect(screen.getByText('Why now:')).toBeInTheDocument();
+    expect(screen.queryByText('Sci-fi')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
 });

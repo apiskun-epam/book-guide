@@ -16,9 +16,13 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,6 +35,7 @@ class BookSuggestionOrchestratorTest {
     @Mock private CandidateAgent candidateAgent;
     @Mock private BookRepository bookRepository;
     @Mock private BookSearchService bookSearchService;
+    @Mock private RankingAgent rankingAgent;
 
     private BookSuggestionOrchestrator orchestrator;
     private final IntakeResult intake = new IntakeResult();
@@ -39,13 +44,13 @@ class BookSuggestionOrchestratorTest {
     @BeforeEach
     void setUp() {
         orchestrator = new BookSuggestionOrchestrator(intakeAgent, preferenceAgent, candidateAgent,
-                bookRepository, bookSearchService, new ExclusionGuard());
+                bookRepository, bookSearchService, new ExclusionGuard(), rankingAgent, new BacklogGuard());
         intake.setGenres(List.of("fantasy"));
-        when(intakeAgent.analyze(any())).thenReturn(intake);
-        when(bookRepository.findByUserId(USER)).thenReturn(List.of(
+        lenient().when(intakeAgent.analyze(any())).thenReturn(intake);
+        lenient().when(bookRepository.findByUserId(USER)).thenReturn(List.of(
                 Book.builder().title("Dune").author("Frank Herbert").isbn("111").listType(ListType.COLLECTION).build(),
                 Book.builder().title("Emma").author("Jane Austen").isbn("222").listType(ListType.READING_LIST).build()));
-        when(preferenceAgent.analyze(any())).thenReturn(preference);
+        lenient().when(preferenceAgent.analyze(any())).thenReturn(preference);
     }
 
     private static BookCandidate candidate(String title, String author, String isbn) {
@@ -138,5 +143,79 @@ class BookSuggestionOrchestratorTest {
         });
 
         assertEquals(List.of("Neuromancer"), streamed);
+    }
+
+    // --- "Pick from my Reading List" mode ---
+
+    private static final class RecordingListener implements SuggestionListener {
+        final List<String> messages = new ArrayList<>();
+        final List<BookCandidate> suggestions = new ArrayList<>();
+
+        @Override public void onMessage(String message) { messages.add(message); }
+        @Override public void onSuggestion(BookCandidate candidate) { suggestions.add(candidate); }
+    }
+
+    private static RankingResult picks(String... refs) {
+        RankingResult result = new RankingResult();
+        for (String ref : refs) {
+            result.getPicks().add(new RankingResult.Pick(ref, "fits tonight"));
+        }
+        return result;
+    }
+
+    @Test
+    void backlogModeRanksOnlyReadingListBooksAndSkipsUnknownRefs() {
+        when(rankingAgent.rank(any(), any(), any())).thenReturn(picks("b1", "b7"));
+        RecordingListener listener = new RecordingListener();
+
+        orchestrator.streamBacklogPicks(USER, "something light", listener);
+
+        assertEquals(List.of("Emma"), listener.suggestions.stream().map(BookCandidate::getTitle).toList());
+        assertEquals("fits tonight", listener.suggestions.get(0).getWhySuggested());
+        ArgumentCaptor<List<Book>> backlog = ArgumentCaptor.forClass(List.class);
+        verify(rankingAgent).rank(any(), any(), backlog.capture());
+        assertEquals(List.of("Emma"), backlog.getValue().stream().map(Book::getTitle).toList());
+    }
+
+    @Test
+    void backlogModeWithEmptyReadingListDoesNotCallClaude() {
+        when(bookRepository.findByUserId(USER)).thenReturn(List.of(
+                Book.builder().title("Dune").author("Frank Herbert").listType(ListType.COLLECTION).build()));
+        RecordingListener listener = new RecordingListener();
+
+        orchestrator.streamBacklogPicks(USER, "something light", listener);
+
+        assertEquals(1, listener.messages.size());
+        assertTrue(listener.suggestions.isEmpty());
+        verifyNoInteractions(rankingAgent);
+    }
+
+    @Test
+    void backlogModeCapsBooksSentToTheModel() {
+        List<Book> many = new ArrayList<>();
+        for (int i = 0; i < BookSuggestionOrchestrator.MAX_BACKLOG_BOOKS + 10; i++) {
+            many.add(Book.builder().title("Book " + i).author("A").listType(ListType.READING_LIST).build());
+        }
+        when(bookRepository.findByUserId(USER)).thenReturn(many);
+        when(rankingAgent.rank(any(), any(), any())).thenReturn(picks());
+        RecordingListener listener = new RecordingListener();
+
+        orchestrator.streamBacklogPicks(USER, "anything", listener);
+
+        ArgumentCaptor<List<Book>> backlog = ArgumentCaptor.forClass(List.class);
+        verify(rankingAgent).rank(any(), any(), backlog.capture());
+        assertEquals(BookSuggestionOrchestrator.MAX_BACKLOG_BOOKS, backlog.getValue().size());
+        assertTrue(listener.suggestions.isEmpty());
+        assertEquals(1, listener.messages.size());
+    }
+
+    @Test
+    void backlogModeOnlyLoadsTheAuthenticatedUsersBooks() {
+        when(rankingAgent.rank(any(), any(), any())).thenReturn(picks("b1"));
+
+        orchestrator.streamBacklogPicks(USER, "something", new RecordingListener());
+
+        verify(bookRepository).findByUserId(USER);
+        verify(bookRepository, never()).findByUserId("uid-b");
     }
 }
