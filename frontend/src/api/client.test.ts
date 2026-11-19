@@ -51,6 +51,17 @@ describe('api client', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/suggestions/stream');
-    expect(JSON.parse(init.body as string)).toEqual({ prompt: 'more', alreadySuggested });
+    expect(JSON.parse(init.body as string)).toEqual({ prompt: 'more', alreadySuggested, mode: 'DISCOVER' });
+  });
+
+  it('asks for Reading List picks when the mode is BACKLOG', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('event:done\ndata:done\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+    );
+
+    await streamBookSuggestions('something short', { onMessage: vi.fn(), onSuggestion: vi.fn(), mode: 'BACKLOG' });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ prompt: 'something short', mode: 'BACKLOG' });
   });
 });

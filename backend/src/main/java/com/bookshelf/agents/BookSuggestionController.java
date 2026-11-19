@@ -49,7 +49,7 @@ public class BookSuggestionController {
      * Streams suggestions as Server-Sent Events.
      *
      * POST /api/suggestions/stream
-     * Request body: { "prompt": "...", "alreadySuggested": [{ "title", "author", "isbn" }] }
+     * Request body: { "prompt": "...", "mode": "DISCOVER" | "BACKLOG", "alreadySuggested": [{ "title", "author", "isbn" }] }
      * Events: "message" (intro text), "suggestion" (one BookCandidate each), "done", "error".
      * Books in alreadySuggested (earlier turns of the conversation) are never proposed again.
      */
@@ -63,19 +63,25 @@ public class BookSuggestionController {
 
         SseEmitter emitter = new SseEmitter(120_000L);
 
+        SuggestionListener listener = new SuggestionListener() {
+            @Override
+            public void onMessage(String message) {
+                send(emitter, "message", message);
+            }
+
+            @Override
+            public void onSuggestion(BookCandidate candidate) {
+                send(emitter, "suggestion", candidate);
+            }
+        };
+
         CompletableFuture.runAsync(() -> {
             try {
-                orchestrator.streamSuggestions(userId, prompt, alreadySuggested, new SuggestionListener() {
-                    @Override
-                    public void onMessage(String message) {
-                        send(emitter, "message", message);
-                    }
-
-                    @Override
-                    public void onSuggestion(BookCandidate candidate) {
-                        send(emitter, "suggestion", candidate);
-                    }
-                });
+                if (request.getMode() == SuggestionMode.BACKLOG) {
+                    orchestrator.streamBacklogPicks(userId, prompt, listener);
+                } else {
+                    orchestrator.streamSuggestions(userId, prompt, alreadySuggested, listener);
+                }
                 send(emitter, "done", "done");
                 emitter.complete();
             } catch (Exception e) {

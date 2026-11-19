@@ -220,7 +220,8 @@ export interface BookCandidate {
   title: string;
   author: string;
   isbn: string | null;
-  genre: string;
+  /** Null for Reading List picks, which come from the saved book rather than the model. */
+  genre: string | null;
   description: string;
   whySuggested: string;
   coverUrl?: string | null;
@@ -252,11 +253,15 @@ export interface BookRef {
   isbn?: string;
 }
 
+/** DISCOVER recommends new books; BACKLOG picks from the user's own Reading List. */
+export type SuggestionMode = 'DISCOVER' | 'BACKLOG';
+
 export interface SuggestionStreamHandlers {
   onMessage: (message: string) => void;
   onSuggestion: (book: BookCandidate) => void;
   /** Books proposed earlier in this conversation; the server never proposes them again. */
   alreadySuggested?: BookRef[];
+  mode?: SuggestionMode;
   signal?: AbortSignal;
 }
 
@@ -266,12 +271,12 @@ export interface SuggestionStreamHandlers {
  */
 export const streamBookSuggestions = async (
   prompt: string,
-  { onMessage, onSuggestion, alreadySuggested = [], signal }: SuggestionStreamHandlers,
+  { onMessage, onSuggestion, alreadySuggested = [], mode = 'DISCOVER', signal }: SuggestionStreamHandlers,
 ): Promise<void> => {
   const response = await apiFetch(`/suggestions/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ prompt, alreadySuggested }),
+    body: JSON.stringify({ prompt, alreadySuggested, mode }),
     signal,
   });
   if (!response.ok || !response.body) {

@@ -20,13 +20,16 @@ const book = (title: string, author: string, isbn = ''): api.BookCandidate => ({
 /** The alreadySuggested list sent with the n-th suggestion request. */
 const sentWith = (call: number) => vi.mocked(api.streamBookSuggestions).mock.calls[call]?.[1].alreadySuggested;
 
+/** Options passed to the n-th suggestion request. */
+const optionsOf = (call: number) => vi.mocked(api.streamBookSuggestions).mock.calls[call]?.[1];
+
 const Wrapper = ({ children }: { children: React.ReactNode }) => <ToastProvider>{children}</ToastProvider>;
 
-const DONE_STATUS = /That's everything|No new recommendations/;
+const DONE_STATUS = /That's everything|No new recommendations|from your Reading List\. Tell me|No picks this time/;
 
-const ask = async (prompt: string) => {
+const ask = async (prompt: string, placeholder = 'What kind of book are you looking for?') => {
   const doneBefore = screen.queryAllByText(DONE_STATUS).length;
-  fireEvent.change(screen.getByPlaceholderText('What kind of book are you looking for?'), {
+  fireEvent.change(screen.getByPlaceholderText(placeholder), {
     target: { value: prompt },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
@@ -76,5 +79,64 @@ describe('ChatPage', () => {
       { title: 'The Hobbit', author: 'J.R.R. Tolkien' },
       { title: 'Howl’s Moving Castle', author: 'Diana Wynne Jones' },
     ]);
+  });
+
+  describe('Reading List mode', () => {
+    const pick = (title: string): api.BookCandidate => ({ ...book(title, 'Jane Austen', '222'), genre: null });
+
+    it('sends the backlog mode and shows picks without add-to-list actions', async () => {
+      vi.mocked(api.streamBookSuggestions).mockImplementationOnce(async (_prompt, { onMessage, onSuggestion }) => {
+        onMessage('Here is the best pick from your Reading List:');
+        onSuggestion(pick('Emma'));
+      });
+      render(<ChatPage />, { wrapper: Wrapper });
+
+      fireEvent.click(screen.getByRole('button', { name: 'From my Reading List' }));
+      await ask('something light', 'What are you in the mood for tonight?');
+
+      expect(optionsOf(0)?.mode).toBe('BACKLOG');
+      expect(optionsOf(0)?.alreadySuggested).toEqual([]);
+      expect(screen.getByText('Emma')).toBeInTheDocument();
+      expect(screen.getByText('Why now:')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /to reading list/i })).not.toBeInTheDocument();
+    });
+
+    it('defaults to discovering new books', async () => {
+      vi.mocked(api.streamBookSuggestions).mockImplementationOnce(async (_prompt, { onMessage }) => {
+        onMessage('Nothing new.');
+      });
+      render(<ChatPage />, { wrapper: Wrapper });
+
+      await ask('something light');
+
+      expect(optionsOf(0)?.mode).toBe('DISCOVER');
+    });
+
+    it('shows the empty state returned for an empty Reading List', async () => {
+      vi.mocked(api.streamBookSuggestions).mockImplementationOnce(async (_prompt, { onMessage }) => {
+        onMessage('Your Reading List is empty. Add a few books to it first.');
+      });
+      render(<ChatPage />, { wrapper: Wrapper });
+
+      fireEvent.click(screen.getByRole('button', { name: 'From my Reading List' }));
+      await ask('anything', 'What are you in the mood for tonight?');
+
+      expect(screen.getByText(/Your Reading List is empty/)).toBeInTheDocument();
+      expect(screen.getByText('No picks this time.')).toBeInTheDocument();
+    });
+
+    it('shows an error when the request fails', async () => {
+      vi.mocked(api.streamBookSuggestions).mockRejectedValueOnce(new Error('boom'));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      render(<ChatPage />, { wrapper: Wrapper });
+
+      fireEvent.click(screen.getByRole('button', { name: 'From my Reading List' }));
+      fireEvent.change(screen.getByPlaceholderText('What are you in the mood for tonight?'), {
+        target: { value: 'anything' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+      expect(await screen.findByText('Failed to get suggestions. Please try again.')).toBeInTheDocument();
+    });
   });
 });

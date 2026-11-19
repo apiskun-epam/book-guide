@@ -6,26 +6,29 @@ interface BookSuggestionCardProps {
   book: BookCandidate;
   onAddToReadingList?: (book: BookCandidate) => void;
   added?: boolean;
+  /** Heading for the reason text; Reading List picks explain why the book fits right now. */
+  whyLabel?: string;
 }
 
 export const BookSuggestionCard: React.FC<BookSuggestionCardProps> = ({ 
   book, 
   onAddToReadingList,
   added,
+  whyLabel = 'Why this book:',
 }) => {
   return (
     <div className="book-suggestion-card">
       <div className="book-suggestion-card__header">
         <h3 className="book-suggestion-card__title">{book.title}</h3>
         <p className="book-suggestion-card__author">by {book.author}</p>
-        <span className="book-suggestion-card__genre">{book.genre}</span>
+        {book.genre && <span className="book-suggestion-card__genre">{book.genre}</span>}
       </div>
       
       <div className="book-suggestion-card__body">
         <p className="book-suggestion-card__description">{book.description}</p>
         
         <div className="book-suggestion-card__why">
-          <strong>Why this book:</strong>
+          <strong>{whyLabel}</strong>
           <p>{book.whySuggested}</p>
         </div>
         
