@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExclusionGuardTest {
@@ -63,5 +64,41 @@ class ExclusionGuardTest {
         List<BookCandidate> candidates = List.of(candidate("Emma", "Jane Austen", null));
 
         assertEquals(candidates, guard.filter(candidates, owned));
+    }
+
+    @Test
+    void rejectsBookAlreadyProposedInConversationByTitleAndAuthor() {
+        var filter = guard.newSuggestionFilter(List.of(), List.of(new BookRef("The Lightning Thief", "Rick Riordan", null)));
+
+        assertFalse(filter.test(candidate("the lightning thief", "RICK RIORDAN", "9780786838653")));
+    }
+
+    @Test
+    void rejectsBookAlreadyProposedInConversationByIsbn() {
+        var filter = guard.newSuggestionFilter(List.of(), List.of(new BookRef("Percy Jackson 1", "R. Riordan", "978-0-7868-3865-3")));
+
+        assertFalse(filter.test(candidate("The Lightning Thief", "Rick Riordan", "9780786838653")));
+    }
+
+    @Test
+    void rejectsRepeatWithinTheSameReply() {
+        var filter = guard.newSuggestionFilter(List.of(), List.of());
+
+        assertTrue(filter.test(candidate("Emma", "Jane Austen", null)));
+        assertFalse(filter.test(candidate("EMMA", "jane austen", null)));
+    }
+
+    @Test
+    void acceptsNewBookWhenConversationHasOtherSuggestions() {
+        var filter = guard.newSuggestionFilter(List.of(), List.of(new BookRef("Dune", "Frank Herbert", "111")));
+
+        assertTrue(filter.test(candidate("Emma", "Jane Austen", "222")));
+    }
+
+    @Test
+    void treatsNullConversationHistoryAsEmpty() {
+        var filter = guard.newSuggestionFilter(List.of(), null);
+
+        assertTrue(filter.test(candidate("Emma", "Jane Austen", "222")));
     }
 }

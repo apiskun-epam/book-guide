@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { streamBookSuggestions, BookCandidate, addBookToReadingList } from '../../api/client';
+import { streamBookSuggestions, BookCandidate, BookRef, addBookToReadingList } from '../../api/client';
 import { ChatMessage } from './ChatMessage';
 import { BookSuggestionCard } from './BookSuggestionCard';
 import { SendIcon } from '../../components/icons';
@@ -11,7 +11,19 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   suggestions?: BookCandidate[];
+  /** True once the server has finished streaming this reply. */
+  done?: boolean;
 }
+
+/** Server-side cap on how many earlier suggestions one request may carry. */
+const MAX_ALREADY_SUGGESTED = 200;
+
+/** Every book proposed so far in this conversation, most recent last. */
+const collectAlreadySuggested = (messages: Message[]): BookRef[] =>
+  messages
+    .flatMap((m) => m.suggestions ?? [])
+    .map(({ title, author, isbn }) => (isbn ? { title, author, isbn } : { title, author }))
+    .slice(-MAX_ALREADY_SUGGESTED);
 
 const ChatPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -42,6 +54,8 @@ const ChatPage: React.FC = () => {
       content: input.trim(),
     };
 
+    const alreadySuggested = collectAlreadySuggested(messages);
+
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
@@ -61,10 +75,12 @@ const ChatPage: React.FC = () => {
 
     try {
       await streamBookSuggestions(userMessage.content, {
+        alreadySuggested,
         onMessage: (content) => upsertAssistant((m) => ({ ...m, content })),
         onSuggestion: (book) =>
           upsertAssistant((m) => ({ ...m, suggestions: [...(m.suggestions ?? []), book] })),
       });
+      upsertAssistant((m) => ({ ...m, done: true }));
     } catch (err) {
       setError('Failed to get suggestions. Please try again.');
       console.error('Error getting suggestions:', err);
@@ -149,6 +165,19 @@ const ChatPage: React.FC = () => {
                       />
                     ))}
                   </div>
+                )}
+                {message.role === 'assistant' && (
+                  message.done ? (
+                    <p className="chat-page__status chat-page__status--done" role="status">
+                      {message.suggestions && message.suggestions.length > 0
+                        ? `That's everything — ${message.suggestions.length} ${message.suggestions.length === 1 ? 'recommendation' : 'recommendations'} in total. Ask for more or refine your request anytime.`
+                        : 'No new recommendations this time. Try rephrasing or broadening your request.'}
+                    </p>
+                  ) : (
+                    isLoading && message.id === messages[messages.length - 1]?.id && (
+                      <p className="chat-page__status" role="status">Finding more books…</p>
+                    )
+                  )
                 )}
               </>
             } />

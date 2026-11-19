@@ -27,7 +27,7 @@ public class CandidateAgent {
     private final ClaudeProperties claudeProperties;
     private final ObjectMapper objectMapper;
 
-    private static final int MAX_TOKENS = 2048;
+    private static final int MAX_TOKENS = 4096;
 
     public CandidateResult generateCandidates(IntakeResult intakeResult, PreferenceResult preferenceResult) {
         try {
@@ -59,10 +59,12 @@ public class CandidateAgent {
      */
     public List<BookCandidate> streamCandidates(IntakeResult intakeResult,
                                                 PreferenceResult preferenceResult,
+                                                List<BookRef> alreadySuggested,
                                                 Consumer<BookCandidate> onCandidate) {
         try {
             String systemPrompt = loadPrompt("classpath:prompts/candidate-agent.txt");
-            String userMessage = buildUserMessage(intakeResult, preferenceResult);
+            String userMessage = buildUserMessage(intakeResult, preferenceResult)
+                    + alreadySuggestedSection(alreadySuggested);
 
             MessageCreateParams params = MessageCreateParams.builder()
                     .model(claudeProperties.model())
@@ -97,6 +99,19 @@ public class CandidateAgent {
             log.error("Error streaming candidate agent", e);
             throw new RuntimeException("Failed to generate book candidates", e);
         }
+    }
+
+    /** Tells the model which books were already proposed; the guard enforces it regardless. */
+    private static String alreadySuggestedSection(List<BookRef> alreadySuggested) {
+        if (alreadySuggested == null || alreadySuggested.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(
+                "\n\nBooks already proposed earlier in this conversation (do NOT recommend these again):\n");
+        for (BookRef ref : alreadySuggested) {
+            sb.append("- ").append(ref.getTitle()).append(" by ").append(ref.getAuthor()).append('\n');
+        }
+        return sb.toString();
     }
 
     private String buildUserMessage(IntakeResult intake, PreferenceResult preference) throws IOException {

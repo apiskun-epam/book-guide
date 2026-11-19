@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCollection, getCurrentUser, setUnauthorizedHandler } from './client';
+import { getCollection, getCurrentUser, setUnauthorizedHandler, streamBookSuggestions } from './client';
 
 const jsonResponse = (status: number, body: unknown = []) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -39,5 +39,18 @@ describe('api client', () => {
   it('returns null from getCurrentUser when there is no session', async () => {
     fetchMock.mockResolvedValue(jsonResponse(401, {}));
     await expect(getCurrentUser()).resolves.toBeNull();
+  });
+
+  it('sends books already proposed in the conversation with a suggestion request', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('event:done\ndata:done\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+    );
+    const alreadySuggested = [{ title: 'Dune', author: 'Frank Herbert', isbn: '111' }];
+
+    await streamBookSuggestions('more', { onMessage: vi.fn(), onSuggestion: vi.fn(), alreadySuggested });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/suggestions/stream');
+    expect(JSON.parse(init.body as string)).toEqual({ prompt: 'more', alreadySuggested });
   });
 });

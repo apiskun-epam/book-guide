@@ -245,9 +245,18 @@ export const getBookSuggestions = async (prompt: string): Promise<SuggestionResp
   return response.json();
 };
 
+/** Identity of a book already proposed earlier in the current conversation. */
+export interface BookRef {
+  title: string;
+  author: string;
+  isbn?: string;
+}
+
 export interface SuggestionStreamHandlers {
   onMessage: (message: string) => void;
   onSuggestion: (book: BookCandidate) => void;
+  /** Books proposed earlier in this conversation; the server never proposes them again. */
+  alreadySuggested?: BookRef[];
   signal?: AbortSignal;
 }
 
@@ -257,12 +266,12 @@ export interface SuggestionStreamHandlers {
  */
 export const streamBookSuggestions = async (
   prompt: string,
-  { onMessage, onSuggestion, signal }: SuggestionStreamHandlers,
+  { onMessage, onSuggestion, alreadySuggested = [], signal }: SuggestionStreamHandlers,
 ): Promise<void> => {
   const response = await apiFetch(`/suggestions/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, alreadySuggested }),
     signal,
   });
   if (!response.ok || !response.body) {

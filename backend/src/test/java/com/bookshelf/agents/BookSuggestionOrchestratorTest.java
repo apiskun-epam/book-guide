@@ -87,17 +87,56 @@ class BookSuggestionOrchestratorTest {
     @Test
     void streamSuggestionsDropsBooksFromBothLists() {
         doAnswer(inv -> {
-            Consumer<BookCandidate> consumer = inv.getArgument(2);
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
             generated().forEach(consumer);
             return null;
-        }).when(candidateAgent).streamCandidates(any(), any(), any());
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
         List<String> streamed = new ArrayList<>();
 
-        orchestrator.streamSuggestions(USER, "something", new SuggestionListener() {
+        orchestrator.streamSuggestions(USER, "something", List.of(), new SuggestionListener() {
             @Override public void onMessage(String message) { }
             @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
         });
 
         assertEquals(List.of("Ulysses"), streamed);
+    }
+
+    @Test
+    void streamSuggestionsDropsBooksAlreadyProposedInConversation() {
+        doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            List.of(candidate("Ulysses", "James Joyce", "333"),
+                    candidate("the hobbit", "J.R.R. Tolkien", null),
+                    candidate("Neuromancer", "William Gibson", "444")).forEach(consumer);
+            return null;
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
+        List<String> streamed = new ArrayList<>();
+
+        orchestrator.streamSuggestions(USER, "more", List.of(
+                new BookRef("Ulysses", "x", "333"),
+                new BookRef("The Hobbit", "J.R.R. Tolkien", null)), new SuggestionListener() {
+            @Override public void onMessage(String message) { }
+            @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
+        });
+
+        assertEquals(List.of("Neuromancer"), streamed);
+    }
+
+    @Test
+    void streamSuggestionsDropsRepeatsWithinTheSameReply() {
+        doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            List.of(candidate("Neuromancer", "William Gibson", "444"),
+                    candidate("neuromancer", "William Gibson", null)).forEach(consumer);
+            return null;
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
+        List<String> streamed = new ArrayList<>();
+
+        orchestrator.streamSuggestions(USER, "more", List.of(), new SuggestionListener() {
+            @Override public void onMessage(String message) { }
+            @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
+        });
+
+        assertEquals(List.of("Neuromancer"), streamed);
     }
 }

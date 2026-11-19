@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 @RestController
@@ -28,7 +29,7 @@ public class BookSuggestionController {
      * Request body: { "prompt": "I want something light and fun" }
      * 
      * @param request The user's book request
-     * @return SuggestionResponse with 5 book candidates
+     * @return SuggestionResponse with up to 5 book candidates (more if the user asks)
      */
     @PostMapping
     public ResponseEntity<SuggestionResponse> getSuggestions(
@@ -48,7 +49,9 @@ public class BookSuggestionController {
      * Streams suggestions as Server-Sent Events.
      *
      * POST /api/suggestions/stream
+     * Request body: { "prompt": "...", "alreadySuggested": [{ "title", "author", "isbn" }] }
      * Events: "message" (intro text), "suggestion" (one BookCandidate each), "done", "error".
+     * Books in alreadySuggested (earlier turns of the conversation) are never proposed again.
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamSuggestions(
@@ -56,12 +59,13 @@ public class BookSuggestionController {
             @Valid @RequestBody SuggestionRequest request) {
         String userId = user.uid();
         String prompt = request.getPrompt();
+        List<BookRef> alreadySuggested = request.getAlreadySuggested();
 
         SseEmitter emitter = new SseEmitter(120_000L);
 
         CompletableFuture.runAsync(() -> {
             try {
-                orchestrator.streamSuggestions(userId, prompt, new SuggestionListener() {
+                orchestrator.streamSuggestions(userId, prompt, alreadySuggested, new SuggestionListener() {
                     @Override
                     public void onMessage(String message) {
                         send(emitter, "message", message);
