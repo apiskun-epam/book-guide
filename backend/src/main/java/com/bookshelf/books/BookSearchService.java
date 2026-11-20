@@ -6,16 +6,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,6 +42,10 @@ public class BookSearchService {
     private static final String FIELD_DESCRIPTION = "description";
     private static final String FIELD_EDITIONS = "editions";
 
+    /** Max time to wait, in total, for the optional per-result edition description lookups. */
+    private static final long EDITION_LOOKUP_DEADLINE_MS = 3000;
+    private static final ExecutorService EDITION_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+
     private final RestTemplate restTemplate;
     private final CatalogProperties catalogProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -47,15 +53,16 @@ public class BookSearchService {
     public List<BookSearchResult> searchBooks(String query) {
         try {
             // Open Library falls back to the caller's language when lang is omitted, so always pass it explicitly.
-            String url = OPEN_LIBRARY_SEARCH_URL + "?q=" + query + "&limit=10&fields=" + SEARCH_FIELDS
-                    + "&lang=" + catalogProperties.language();
-            String response = restTemplate.getForObject(url, String.class);
+            // The query is a URI variable so the RestTemplate encodes it; never concatenate user input into the URL.
+            String url = OPEN_LIBRARY_SEARCH_URL + "?q={q}&limit=10&fields=" + SEARCH_FIELDS + "&lang={lang}";
+            String response = getWithOneRetryOnTimeout(url, query, catalogProperties.language());
 
             JsonNode root = objectMapper.readTree(response);
             JsonNode docs = root.get("docs");
 
             List<BookSearchResult> results = new ArrayList<>();
-            Map<BookSearchResult, String> workKeys = new IdentityHashMap<>();
+            // Results whose work description isn't English; filled in from edition lookups run in parallel below.
+            List<PendingDescription> pending = new ArrayList<>();
             if (docs != null && docs.isArray()) {
                 for (JsonNode doc : docs) {
                     BookSearchResult result = new BookSearchResult();
@@ -92,7 +99,13 @@ public class BookSearchService {
 
                     // Description: English only. Work descriptions are not language-tagged, so fall back to the
                     // best edition's description when the work's is in another language; otherwise leave it empty.
-                    result.setDescription(englishDescription(doc));
+                    String workDescription = descriptionText(doc.get(FIELD_DESCRIPTION));
+                    if (EnglishText.looksEnglish(workDescription)) {
+                        result.setDescription(workDescription);
+                    } else {
+                        pending.add(new PendingDescription(result,
+                                CompletableFuture.supplyAsync(() -> fetchEditionDescription(doc), EDITION_EXECUTOR)));
+                    }
 
                     if (result.getTitle() != null) {
                         results.add(result);
@@ -100,18 +113,52 @@ public class BookSearchService {
                 }
             }
 
+            applyEditionDescriptions(pending);
             return results;
         } catch (Exception e) {
             throw new RuntimeException("Failed to search books", e);
         }
     }
 
-    private String englishDescription(JsonNode doc) {
-        String workDescription = descriptionText(doc.get(FIELD_DESCRIPTION));
-        if (EnglishText.looksEnglish(workDescription)) {
-            return workDescription;
+    private record PendingDescription(BookSearchResult result, CompletableFuture<String> future) {
+    }
+
+    /**
+     * Waits (bounded) for the parallel edition lookups. Descriptions are optional, so anything that is slow or
+     * failed is left empty rather than delaying or failing the search.
+     */
+    private void applyEditionDescriptions(List<PendingDescription> pending) {
+        if (pending.isEmpty()) {
+            return;
         }
-        return fetchEditionDescription(doc);
+        try {
+            CompletableFuture.allOf(pending.stream().map(PendingDescription::future).toArray(CompletableFuture[]::new))
+                    .get(EDITION_LOOKUP_DEADLINE_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn("Edition description lookups exceeded {} ms; returning results without the slow ones",
+                    EDITION_LOOKUP_DEADLINE_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            log.warn("Edition description lookup failed", e);
+        }
+        for (PendingDescription p : pending) {
+            if (p.future().isDone() && !p.future().isCompletedExceptionally()) {
+                p.result().setDescription(p.future().join());
+            } else {
+                p.future().cancel(true);
+            }
+        }
+    }
+
+    /** One retry, only for I/O timeouts/connection errors; Open Library is occasionally slow on a first attempt. */
+    private String getWithOneRetryOnTimeout(String url, Object... uriVariables) {
+        try {
+            return restTemplate.getForObject(url, String.class, uriVariables);
+        } catch (ResourceAccessException e) {
+            log.warn("Open Library request failed ({}), retrying once", e.getMessage());
+            return restTemplate.getForObject(url, String.class, uriVariables);
+        }
     }
 
     /** Best-effort: the top-ranked (for {@code lang}) edition's own description, if English. Never throws. */
