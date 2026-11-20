@@ -8,6 +8,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,7 +35,7 @@ class BookSearchServiceTest {
     private BookSearchService service;
 
     private void stubResponse(String json) {
-        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class))).thenReturn(json);
     }
 
     @Test
@@ -121,8 +123,8 @@ class BookSearchServiceTest {
         service.searchBooks("foundation");
 
         ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
-        verify(restTemplate).getForObject(url.capture(), eq(String.class));
-        assertTrue(url.getValue().startsWith("https://openlibrary.org/search.json?q=foundation"));
+        verify(restTemplate).getForObject(url.capture(), eq(String.class), eq("foundation"), eq("en"));
+        assertTrue(url.getValue().startsWith("https://openlibrary.org/search.json?q={q}"));
         assertTrue(url.getValue().contains("&limit=10"));
         assertTrue(url.getValue().contains("fields="));
     }
@@ -134,8 +136,8 @@ class BookSearchServiceTest {
         service.searchBooks("last wish");
 
         ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
-        verify(restTemplate).getForObject(url.capture(), eq(String.class));
-        assertTrue(url.getValue().contains("&lang=en"));
+        verify(restTemplate).getForObject(url.capture(), eq(String.class), eq("last wish"), eq("en"));
+        assertTrue(url.getValue().contains("&lang={lang}"));
         assertTrue(url.getValue().contains("editions"));
     }
 
@@ -169,12 +171,12 @@ class BookSearchServiceTest {
 
         assertEquals("Geralt is a witcher who hunts the monsters of the land.",
                 service.searchBooks("t").get(0).getDescription());
-        verify(restTemplate).getForObject(anyString(), eq(String.class));
+        verify(restTemplate).getForObject(anyString(), eq(String.class), any(Object[].class));
     }
 
     @Test
     void usesEnglishEditionDescriptionWhenWorkDescriptionIsPolish() {
-        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class))).thenReturn(
                 "{\"docs\":[{\"title\":\"Ostatnie życzenie\",\"description\":\"" + POLISH + "\","
                         + "\"editions\":{\"docs\":[{\"key\":\"/books/OL1M\",\"title\":\"The Last Wish\"}]}}]}",
                 "{\"description\":{\"type\":\"/type/text\",\"value\":\"Geralt of Rivia is a witcher, and he hunts the monsters.\"}}");
@@ -183,12 +185,12 @@ class BookSearchServiceTest {
 
         assertEquals("The Last Wish", r.getTitle());
         assertEquals("Geralt of Rivia is a witcher, and he hunts the monsters.", r.getDescription());
-        verify(restTemplate).getForObject(eq("https://openlibrary.org/books/OL1M.json"), eq(String.class));
+        verify(restTemplate).getForObject(eq("https://openlibrary.org/books/OL1M.json"), eq(String.class), any(Object[].class));
     }
 
     @Test
     void leavesDescriptionEmptyWhenNothingEnglishIsAvailable() {
-        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class))).thenReturn(
                 "{\"docs\":[{\"title\":\"T\",\"description\":\"" + POLISH + "\","
                         + "\"editions\":{\"docs\":[{\"key\":\"/books/OL1M\"}]}}]}",
                 "{\"description\":\"" + POLISH + "\"}");
@@ -198,7 +200,7 @@ class BookSearchServiceTest {
 
     @Test
     void leavesDescriptionEmptyWhenEditionLookupFailsOrKeyIsInvalid() {
-        when(restTemplate.getForObject(anyString(), eq(String.class)))
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class)))
                 .thenReturn("{\"docs\":[{\"title\":\"A\",\"description\":\"" + POLISH + "\","
                         + "\"editions\":{\"docs\":[{\"key\":\"/books/OL1M\"}]}},"
                         + "{\"title\":\"B\",\"description\":\"" + POLISH + "\","
@@ -230,12 +232,42 @@ class BookSearchServiceTest {
     @Test
     void wrapsHttpFailureInRuntimeException() {
         RestClientException cause = new RestClientException("boom");
-        when(restTemplate.getForObject(anyString(), any(Class.class))).thenThrow(cause);
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class))).thenThrow(cause);
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.searchBooks("x"));
 
         assertEquals("Failed to search books", ex.getMessage());
         assertSame(cause, ex.getCause());
+    }
+
+    @Test
+    void retriesOnceWhenTheFirstAttemptTimesOut() {
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class)))
+                .thenThrow(new ResourceAccessException("Read timed out"))
+                .thenReturn("{\"docs\":[{\"title\":\"Dune\"}]}");
+
+        List<BookSearchResult> results = service.searchBooks("dune");
+
+        assertEquals("Dune", results.get(0).getTitle());
+        verify(restTemplate, times(2)).getForObject(anyString(), eq(String.class), any(Object[].class));
+    }
+
+    @Test
+    void failsWhenTheRetryTimesOutToo() {
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class)))
+                .thenThrow(new ResourceAccessException("Read timed out"));
+
+        assertThrows(RuntimeException.class, () -> service.searchBooks("dune"));
+        verify(restTemplate, times(2)).getForObject(anyString(), eq(String.class), any(Object[].class));
+    }
+
+    @Test
+    void doesNotRetryNonTimeoutFailures() {
+        when(restTemplate.getForObject(anyString(), eq(String.class), any(Object[].class)))
+                .thenThrow(new RestClientException("500"));
+
+        assertThrows(RuntimeException.class, () -> service.searchBooks("dune"));
+        verify(restTemplate).getForObject(anyString(), eq(String.class), any(Object[].class));
     }
 
     @Test
