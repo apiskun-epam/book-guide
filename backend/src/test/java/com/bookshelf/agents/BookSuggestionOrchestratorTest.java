@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -125,6 +126,71 @@ class BookSuggestionOrchestratorTest {
         });
 
         assertEquals(List.of("Neuromancer"), streamed);
+    }
+
+    private static final BookCandidate STUB = new BookCandidate("Hell House", "Richard Matheson", null, "Horror",
+            "placeholder", "placeholder", null);
+
+    @Test
+    void streamSuggestionsRetriesWithRejectedBooksExcludedWhenNothingUsable() {
+        doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            consumer.accept(STUB);
+            return null;
+        }).doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            consumer.accept(candidate("Neuromancer", "William Gibson", "444"));
+            return null;
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
+        List<String> streamed = new ArrayList<>();
+
+        orchestrator.streamSuggestions(USER, "a book", List.of(), new SuggestionListener() {
+            @Override public void onMessage(String message) { }
+            @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
+        });
+
+        assertEquals(List.of("Neuromancer"), streamed);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BookRef>> avoid = ArgumentCaptor.forClass(List.class);
+        verify(candidateAgent, times(2)).streamCandidates(any(), any(), avoid.capture(), any());
+        assertTrue(avoid.getAllValues().get(0).stream().noneMatch(r -> "Hell House".equals(r.getTitle())));
+        assertTrue(avoid.getAllValues().get(1).stream().anyMatch(r -> "Hell House".equals(r.getTitle())));
+    }
+
+    @Test
+    void streamSuggestionsGivesUpAfterMaxRetries() {
+        doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            consumer.accept(STUB);
+            return null;
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
+        List<String> streamed = new ArrayList<>();
+
+        orchestrator.streamSuggestions(USER, "a book", List.of(), new SuggestionListener() {
+            @Override public void onMessage(String message) { }
+            @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
+        });
+
+        assertTrue(streamed.isEmpty());
+        verify(candidateAgent, times(1 + BookSuggestionOrchestrator.MAX_EMPTY_RETRIES))
+                .streamCandidates(any(), any(), any(), any());
+    }
+
+    @Test
+    void streamSuggestionsDoesNotRetryWhenAnythingWasAccepted() {
+        doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            consumer.accept(STUB);
+            consumer.accept(candidate("Neuromancer", "William Gibson", "444"));
+            return null;
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
+
+        orchestrator.streamSuggestions(USER, "a book", List.of(), new SuggestionListener() {
+            @Override public void onMessage(String message) { }
+            @Override public void onSuggestion(BookCandidate candidate) { }
+        });
+
+        verify(candidateAgent, times(1)).streamCandidates(any(), any(), any(), any());
     }
 
     @Test

@@ -29,6 +29,9 @@ public class BookSuggestionOrchestrator {
     /** Upper bound on Reading List books sent to the model in one request. */
     static final int MAX_BACKLOG_BOOKS = 50;
 
+    /** Extra candidate-agent calls allowed when every candidate was rejected. */
+    static final int MAX_EMPTY_RETRIES = 2;
+
     /**
      * Orchestrates the multi-agent workflow to generate book suggestions.
      * 
@@ -102,18 +105,34 @@ public class BookSuggestionOrchestrator {
 
             listener.onMessage(buildResponseMessage(intakeResult, readBooks.size()));
 
-            candidateAgent.streamCandidates(intakeResult, preferenceResult, avoidList(allBooks, alreadySuggested), candidate -> {
-                if (!CandidateValidator.isValid(candidate)) {
-                    log.warn("Dropping invalid candidate from model: title='{}', author='{}'",
-                            candidate.getTitle(), candidate.getAuthor());
-                    return;
+            // The model sometimes proposes a book the user already has, or returns a stub for it. If
+            // nothing usable came out, ask again with the rejected books added to the skip list.
+            List<BookRef> avoid = avoidList(allBooks, alreadySuggested);
+            for (int attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
+                List<BookRef> rejected = new ArrayList<>();
+                int[] accepted = {0};
+                candidateAgent.streamCandidates(intakeResult, preferenceResult, List.copyOf(avoid), candidate -> {
+                    if (!CandidateValidator.isValid(candidate)) {
+                        log.warn("Dropping invalid candidate from model: title='{}', author='{}'",
+                                candidate.getTitle(), candidate.getAuthor());
+                        rejected.add(toRef(candidate));
+                        return;
+                    }
+                    if (!allowed.test(candidate)) {
+                        rejected.add(toRef(candidate));
+                        return;
+                    }
+                    attachCover(candidate);
+                    listener.onSuggestion(candidate);
+                    accepted[0]++;
+                });
+                if (accepted[0] > 0 || rejected.isEmpty()) {
+                    break;
                 }
-                if (!allowed.test(candidate)) {
-                    return;
-                }
-                attachCover(candidate);
-                listener.onSuggestion(candidate);
-            });
+                log.info("No usable candidates (attempt {}); retrying with {} rejected book(s) excluded",
+                        attempt + 1, rejected.size());
+                avoid.addAll(rejected);
+            }
         } catch (Exception e) {
             log.error("Error streaming book suggestions for user: {}", userId, e);
             throw new RuntimeException("Failed to generate book suggestions. Please try again.", e);
@@ -169,6 +188,10 @@ public class BookSuggestionOrchestrator {
             avoid.addAll(alreadySuggested);
         }
         return avoid;
+    }
+
+    private static BookRef toRef(BookCandidate candidate) {
+        return new BookRef(candidate.getTitle(), candidate.getAuthor(), candidate.getIsbn());
     }
 
     private static List<BookCandidate> validCandidates(List<BookCandidate> candidates) {
