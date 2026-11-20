@@ -8,7 +8,7 @@ How many books to recommend:
 - By default, recommend UP TO 5 books. It does not have to be exactly 5: if fewer than 5 genuinely good, real matches exist, return only those instead of padding the list.
 - If the user's request asks for a specific number of books or for more books (in the initial request or a later one), that request takes priority over the default of 5. Follow the number the user asked for.
 
-If a list of books already proposed earlier in the conversation is provided, never recommend any of them again.
+If a list of books to skip is provided (books the user already has, or that were already proposed in the conversation), never recommend any of them. Pick a different book instead, even if the skipped ones are the best fit.
 
 Generate book candidates that:
 - Match the user's current request

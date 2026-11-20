@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -58,11 +59,12 @@ public class BookSuggestionOrchestrator {
             
             // Step 3: Candidate - generate recommendations
             log.debug("Step 3: Running candidate agent");
-            CandidateResult candidateResult = candidateAgent.generateCandidates(intakeResult, preferenceResult);
+            CandidateResult candidateResult = candidateAgent.generateCandidates(intakeResult, preferenceResult, avoidList(allBooks, List.of()));
             log.debug("Generated {} candidates", candidateResult.getCandidates().size());
             
             // Step 4: Guard - remove books the user already has in either list
-            List<BookCandidate> candidates = exclusionGuard.filter(candidateResult.getCandidates(), allBooks);
+            List<BookCandidate> candidates = exclusionGuard.filter(
+                    validCandidates(candidateResult.getCandidates()), allBooks);
             candidates.forEach(this::attachCover);
 
             // Build response
@@ -100,7 +102,12 @@ public class BookSuggestionOrchestrator {
 
             listener.onMessage(buildResponseMessage(intakeResult, readBooks.size()));
 
-            candidateAgent.streamCandidates(intakeResult, preferenceResult, alreadySuggested, candidate -> {
+            candidateAgent.streamCandidates(intakeResult, preferenceResult, avoidList(allBooks, alreadySuggested), candidate -> {
+                if (!CandidateValidator.isValid(candidate)) {
+                    log.warn("Dropping invalid candidate from model: title='{}', author='{}'",
+                            candidate.getTitle(), candidate.getAuthor());
+                    return;
+                }
                 if (!allowed.test(candidate)) {
                     return;
                 }
@@ -152,6 +159,26 @@ public class BookSuggestionOrchestrator {
             log.error("Error picking from reading list for user: {}", userId, e);
             throw new RuntimeException("Failed to pick from your reading list. Please try again.", e);
         }
+    }
+
+    /** Books the model should not propose: everything the user already has plus earlier proposals. */
+    private static List<BookRef> avoidList(List<Book> allBooks, List<BookRef> alreadySuggested) {
+        List<BookRef> avoid = new ArrayList<>();
+        allBooks.forEach(b -> avoid.add(new BookRef(b.getTitle(), b.getAuthor(), b.getIsbn())));
+        if (alreadySuggested != null) {
+            avoid.addAll(alreadySuggested);
+        }
+        return avoid;
+    }
+
+    private static List<BookCandidate> validCandidates(List<BookCandidate> candidates) {
+        return candidates.stream().filter(c -> {
+            boolean valid = CandidateValidator.isValid(c);
+            if (!valid) {
+                log.warn("Dropping invalid candidate from model: {}", c);
+            }
+            return valid;
+        }).toList();
     }
 
     /** Preferences are learned from books the user has read, not from the reading list. */

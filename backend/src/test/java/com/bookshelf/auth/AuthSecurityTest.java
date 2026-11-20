@@ -15,6 +15,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
 
@@ -26,11 +27,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Checks the security chain over the real controllers, with Firebase mocked. */
@@ -162,6 +165,20 @@ class AuthSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"prompt\":\"something light\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void suggestionStream_asyncDispatchIsNotDeniedAfterTheStreamCompletes() throws Exception {
+        MvcResult started = mockMvc.perform(post("/api/suggestions/stream")
+                        .cookie(cookie("cookie-a"))
+                        .header("X-Requested-With", "bookshelf")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"something light\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        // The completed SseEmitter is re-dispatched with no security context; it must not be denied.
+        mockMvc.perform(asyncDispatch(started)).andExpect(status().isOk());
     }
 
     @Test

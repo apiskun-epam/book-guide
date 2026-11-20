@@ -1,6 +1,7 @@
 package com.bookshelf.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -50,6 +51,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/session", "/api/auth/logout").permitAll()
                         // Error dispatches lose the security context; the body carries no user data.
                         .requestMatchers("/error").permitAll()
+                        // Async dispatches (e.g. a completed SseEmitter) also lose the security context. The
+                        // original request was already authenticated, so re-checking it only breaks the stream.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((request, response, ex) ->
