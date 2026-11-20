@@ -54,7 +54,7 @@ class BookSuggestionOrchestratorTest {
     }
 
     private static BookCandidate candidate(String title, String author, String isbn) {
-        return new BookCandidate(title, author, isbn, null, null, null, null);
+        return new BookCandidate(title, author, isbn, "Horror", "A real description of the book.", "Matches your taste in the genre.", null);
     }
 
     private List<BookCandidate> generated() {
@@ -68,7 +68,7 @@ class BookSuggestionOrchestratorTest {
     void generateSuggestionsDropsBooksFromBothLists() {
         CandidateResult result = new CandidateResult();
         result.setCandidates(generated());
-        when(candidateAgent.generateCandidates(any(), any())).thenReturn(result);
+        when(candidateAgent.generateCandidates(any(), any(), any())).thenReturn(result);
 
         SuggestionResponse response = orchestrator.generateSuggestions(USER, "something");
 
@@ -79,7 +79,7 @@ class BookSuggestionOrchestratorTest {
     void preferenceAgentOnlySeesCollectionBooks() {
         CandidateResult result = new CandidateResult();
         result.setCandidates(new ArrayList<>());
-        when(candidateAgent.generateCandidates(any(), any())).thenReturn(result);
+        when(candidateAgent.generateCandidates(any(), any(), any())).thenReturn(result);
 
         orchestrator.generateSuggestions(USER, "something");
 
@@ -120,6 +120,40 @@ class BookSuggestionOrchestratorTest {
         orchestrator.streamSuggestions(USER, "more", List.of(
                 new BookRef("Ulysses", "x", "333"),
                 new BookRef("The Hobbit", "J.R.R. Tolkien", null)), new SuggestionListener() {
+            @Override public void onMessage(String message) { }
+            @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
+        });
+
+        assertEquals(List.of("Neuromancer"), streamed);
+    }
+
+    @Test
+    void streamSuggestionsTellsTheModelToSkipBooksFromBothListsAndEarlierProposals() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BookRef>> avoid = ArgumentCaptor.forClass(List.class);
+
+        orchestrator.streamSuggestions(USER, "a book", List.of(new BookRef("Ulysses", "James Joyce", "333")),
+                new SuggestionListener() {
+                    @Override public void onMessage(String message) { }
+                    @Override public void onSuggestion(BookCandidate candidate) { }
+                });
+
+        verify(candidateAgent).streamCandidates(any(), any(), avoid.capture(), any());
+        assertEquals(List.of("Dune", "Emma", "Ulysses"), avoid.getValue().stream().map(BookRef::getTitle).toList());
+    }
+
+    @Test
+    void streamSuggestionsDropsPlaceholderCandidatesFromTheModel() {
+        BookCandidate fake = new BookCandidate("Hoff the Back of a Lorry", "Unknown", null, "Horror",
+                "placeholder", "placeholder", null);
+        doAnswer(inv -> {
+            Consumer<BookCandidate> consumer = inv.getArgument(3);
+            List.of(fake, candidate("Neuromancer", "William Gibson", "444")).forEach(consumer);
+            return null;
+        }).when(candidateAgent).streamCandidates(any(), any(), any(), any());
+        List<String> streamed = new ArrayList<>();
+
+        orchestrator.streamSuggestions(USER, "a book", List.of(), new SuggestionListener() {
             @Override public void onMessage(String message) { }
             @Override public void onSuggestion(BookCandidate candidate) { streamed.add(candidate.getTitle()); }
         });

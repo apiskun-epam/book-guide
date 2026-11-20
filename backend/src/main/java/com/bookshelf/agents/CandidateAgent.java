@@ -30,9 +30,16 @@ public class CandidateAgent {
     private static final int MAX_TOKENS = 4096;
 
     public CandidateResult generateCandidates(IntakeResult intakeResult, PreferenceResult preferenceResult) {
+        return generateCandidates(intakeResult, preferenceResult, List.of());
+    }
+
+    /** {@code avoid} lists books to steer the model away from; the exclusion guard still enforces it. */
+    public CandidateResult generateCandidates(IntakeResult intakeResult, PreferenceResult preferenceResult,
+                                              List<BookRef> avoid) {
         try {
             String systemPrompt = loadPrompt("classpath:prompts/candidate-agent.txt");
-            String userMessage = buildUserMessage(intakeResult, preferenceResult);
+            String userMessage = buildUserMessage(intakeResult, preferenceResult)
+                    + alreadySuggestedSection(avoid);
             
             MessageCreateParams params = MessageCreateParams.builder()
                     .model(claudeProperties.model())
@@ -75,6 +82,7 @@ public class CandidateAgent {
 
             CandidateStreamParser parser = new CandidateStreamParser();
             List<BookCandidate> candidates = new ArrayList<>();
+            StringBuilder raw = new StringBuilder();
 
             try (StreamResponse<RawMessageStreamEvent> stream =
                          anthropicClient.messages().createStreaming(params)) {
@@ -83,6 +91,7 @@ public class CandidateAgent {
                         .flatMap(deltaEvent -> deltaEvent.delta().text().stream())
                         .map(TextDelta::text)
                         .forEach(chunk -> {
+                            raw.append(chunk);
                             for (String json : parser.feed(chunk)) {
                                 try {
                                     BookCandidate candidate = objectMapper.readValue(json, BookCandidate.class);
@@ -94,6 +103,7 @@ public class CandidateAgent {
                             }
                         });
             }
+            log.debug("Candidate agent raw streamed response: {}", raw);
             return candidates;
         } catch (Exception e) {
             log.error("Error streaming candidate agent", e);
@@ -101,14 +111,21 @@ public class CandidateAgent {
         }
     }
 
-    /** Tells the model which books were already proposed; the guard enforces it regardless. */
+    /** Upper bound on avoid-list entries sent to the model, to keep the prompt small. */
+    private static final int MAX_AVOID_BOOKS = 200;
+
+    /**
+     * Tells the model which books to skip (already owned or already proposed). Only a hint to save
+     * wasted candidates: the exclusion guard enforces it regardless.
+     */
     private static String alreadySuggestedSection(List<BookRef> alreadySuggested) {
         if (alreadySuggested == null || alreadySuggested.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder(
-                "\n\nBooks already proposed earlier in this conversation (do NOT recommend these again):\n");
-        for (BookRef ref : alreadySuggested) {
+                "\n\nBooks to skip because the user already has them (collection or Reading List) or they were "
+                        + "already proposed earlier in this conversation (do NOT recommend these):\n");
+        for (BookRef ref : alreadySuggested.stream().limit(MAX_AVOID_BOOKS).toList()) {
             sb.append("- ").append(ref.getTitle()).append(" by ").append(ref.getAuthor()).append('\n');
         }
         return sb.toString();
